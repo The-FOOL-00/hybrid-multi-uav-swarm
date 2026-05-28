@@ -1,0 +1,91 @@
+#VRML_SIM R2025a utf8
+# Bird PROTO: self-supervising flying bird using Boids-like motion
+# ENU coordinate system: Z=Up, X=East, Y=North
+
+PROTO Bird [
+  field SFVec3f    translation  0 0 7
+  field SFRotation rotation     0 0 1 0
+  field SFString   name         "bird"
+  field SFString   controller   "bird_controller"
+  field SFColor    color        0.25 0.2 0.15
+]
+{
+  Robot {
+    translation IS translation
+    rotation    IS rotation
+    name        IS name
+    controller  IS controller
+    supervisor  TRUE
+    children [
+      # Body
+      Shape {
+        appearance PBRAppearance {
+          baseColor IS color
+          roughness 0.9
+          metalness 0
+        }
+        geometry Box {
+          size 0.28 0.14 0.08
+        }
+      }
+      # Left wing
+      Transform {
+        translation -0.18 0 0
+        rotation 1 0 0 0.35
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor IS color
+              roughness 0.9
+              metalness 0
+            }
+            geometry Box {
+              size 0.22 0.02 0.09
+            }
+          }
+        ]
+      }
+      # Right wing
+      Transform {
+        translation 0.18 0 0
+        rotation 1 0 0 -0.35
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor IS color
+              roughness 0.9
+              metalness 0
+            }
+            geometry Box {
+              size 0.22 0.02 0.09
+            }
+          }
+        ]
+      }
+      # Tail
+      Transform {
+        translation 0 -0.17 0
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor IS color
+              roughness 0.9
+              metalness 0
+            }
+            geometry Box {
+              size 0.14 0.08 0.04
+            }
+          }
+        ]
+      }
+    ]
+    boundingObject Box {
+      size 0.35 0.28 0.12
+    }
+    physics Physics {
+      density -1
+      mass 0.18
+      centerOfMass [ 0 0 0 ]
+    }
+  }
+}

@@ -1,0 +1,106 @@
+#VRML_SIM R2025a utf8
+# CrowdAgent PROTO: supervisor-enabled pedestrian agent
+# ENU coordinate system: Z=Up, X=East, Y=North
+# Place with Z=1.27 for feet at ground level (Z=0)
+
+PROTO CrowdAgent [
+  field SFVec3f    translation  0 0 1.27
+  field SFRotation rotation     0 0 1 0
+  field SFString   name         "crowd_agent"
+  field SFString   controller   "crowd_controller"
+  field SFColor    shirtColor   0.2 0.4 0.8
+  field SFColor    pantsColor   0.1 0.1 0.35
+  field SFColor    skinColor    0.85 0.65 0.45
+]
+{
+  Robot {
+    translation IS translation
+    rotation    IS rotation
+    name        IS name
+    controller  IS controller
+    supervisor  TRUE
+    children [
+      # Head
+      Transform {
+        translation 0 0 0.77
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor IS skinColor
+              roughness 0.8
+              metalness 0
+            }
+            geometry Sphere {
+              radius 0.12
+            }
+          }
+        ]
+      }
+      # Torso
+      Transform {
+        translation 0 0 0.35
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor IS shirtColor
+              roughness 0.8
+              metalness 0
+            }
+            geometry Cylinder {
+              height 0.55
+              radius 0.18
+            }
+          }
+        ]
+      }
+      # Left leg
+      Transform {
+        translation -0.09 0 -0.3
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor IS pantsColor
+              roughness 0.8
+              metalness 0
+            }
+            geometry Cylinder {
+              height 0.52
+              radius 0.07
+            }
+          }
+        ]
+      }
+      # Right leg
+      Transform {
+        translation 0.09 0 -0.3
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor IS pantsColor
+              roughness 0.8
+              metalness 0
+            }
+            geometry Cylinder {
+              height 0.52
+              radius 0.07
+            }
+          }
+        ]
+      }
+    ]
+    boundingObject Transform {
+      translation 0 0 0.1
+      children [
+        Capsule {
+          height 1.2
+          radius 0.18
+        }
+      ]
+    }
+    physics Physics {
+      density -1
+      mass 70
+      centerOfMass [ 0 0 0.3 ]
+    }
+  }
+}
