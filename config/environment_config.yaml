@@ -1,0 +1,121 @@
+# Multi-UAV Surveillance Research Configuration
+# STIRS-2025 | SSN College of Engineering
+# Project: Attention-Guided Decentralized Multi-UAV Surveillance
+#          for Real-Time Crowd Monitoring in Smart Cities using POMDP
+
+project:
+  name: "Attention-Guided Multi-UAV Surveillance"
+  version: "1.0"
+  researchers: ["Sharruk S", "Sundareswaran", "Jeswin Joel"]
+  guide: "Dr. E. Selvam"
+  institution: "SSN College of Engineering"
+
+webots:
+  version: "R2025a"
+  timestep: 8                  # ms
+  coordinate_system: "ENU"     # East=X, North=Y, Up=Z
+  webots_exe: "C:/Program Files/Webots/webots.exe"
+
+scenarios:
+  downtown:
+    world_file: "worlds/downtown.wbt"
+    description: "Dense urban with high-rise buildings and 3x3 road grid"
+    buildings: 15
+    crowd_agents: 15
+    uav_count: 5
+    patrol_altitude: 15.0      # metres (ENU Z)
+    patrol_radius: 20.0
+    birds: 8
+    area_m2: 40000
+
+  event:
+    world_file: "worlds/event.wbt"
+    description: "Dense crowd gathering in central 50x50m plaza"
+    buildings: 5
+    crowd_agents: 40
+    uav_count: 5
+    patrol_altitude: 12.0
+    patrol_radius: 15.0
+    birds: 8
+    area_m2: 25600
+
+  residential:
+    world_file: "worlds/residential.wbt"
+    description: "Low-density neighborhood with parks and curved roads"
+    buildings: 8
+    crowd_agents: 8
+    uav_count: 5
+    patrol_altitude: 10.0
+    patrol_radius: 15.0
+    birds: 6
+    area_m2: 25600
+
+  mixed:
+    world_file: "worlds/mixed.wbt"
+    description: "Mixed commercial (offices/shops) and residential zones"
+    buildings: 14
+    crowd_agents: 35
+    uav_count: 5
+    patrol_altitude: 15.0
+    patrol_radius: 20.0
+    birds: 8
+    area_m2: 32400
+
+  industrial:
+    world_file: "worlds/industrial.wbt"
+    description: "Industrial port with stacked shipping containers and warehouses"
+    buildings: 2
+    crowd_agents: 10
+    uav_count: 5
+    patrol_altitude: 12.0
+    patrol_radius: 18.0
+    birds: 5
+    area_m2: 32400
+
+uav:
+  model: "Mavic2Pro"
+  count: 5
+  formation: "circular_staggered"
+  controller: "uav_swarm_controller"
+  motion_mode: "supervisor_teleport"  # direct translation via Supervisor API
+
+pomdp:
+  observation_radius: 12.0     # metres
+  attention_alpha: 0.15        # crowd-centroid pull weight
+  coverage_cell_size: 5.0      # metres
+  reward_coverage_weight: 0.6
+  reward_tracking_weight: 0.4
+
+physics:
+  gravity: -9.806
+  wind:
+    enabled: false             # enable via WorldInfo physics plugin
+    base_speed: 2.0
+    direction: [1.0, 0.0, 0.5]
+    turbulence: 0.3
+  uav_damping:
+    linear: 0.5
+    angular: 0.5
+
+crowd:
+  walk_speed_min: 0.8
+  walk_speed_max: 1.6
+  pedestrian_height_z: 1.27   # ENU Z of pedestrian center at ground
+  state_machine: true
+  states: ["WALK", "WAIT", "GATHER"]
+
+birds:
+  altitude_min: 4.0
+  altitude_max: 12.0
+  orbit_radius_base: 10.0
+  speed_rad_per_s: 0.25
+  controller: "bird_controller"
+
+logging:
+  output_dir: "logs/"
+  metrics_interval_steps: 125
+  metrics:
+    - coverage_percent
+    - crowd_agents_in_fov
+    - active_uavs
+    - uav_positions
