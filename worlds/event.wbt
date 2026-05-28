@@ -1,0 +1,512 @@
+#VRML_SIM R2025a utf8
+# World 2: Event - Dense crowd in central plaza
+# ENU: Z=Up, X=East, Y=North
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Asphalt.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Pavement.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/road/protos/Road.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/SimpleBuilding.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/CommercialBuilding.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/Hotel.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/traffic/protos/StreetLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/street_furniture/protos/UrbanFence.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/humans/pedestrian/protos/Pedestrian.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+EXTERNPROTO "../protos/Bird.proto"
+
+WorldInfo {
+  info [
+    "Multi-UAV Surveillance Research Environment"
+    "STIRS-2025 Project - SSN College of Engineering"
+    "Scenario: Public Event - Dense Crowd"
+  ]
+  title "Smart City UAV Surveillance - Event"
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+  gravity -9.806
+  CFM 0.00001
+  ERP 0.2
+}
+
+Viewpoint {
+  orientation -0.16 0.22 0.96 1.32
+  position 50 -50 45
+  near 0.5
+  follow "UAV_0"
+  followSmoothness 0.5
+}
+
+TexturedBackground {
+  texture "noon_cloudy_countryside"
+  luminosity 1.2
+}
+TexturedBackgroundLight {
+  castShadows FALSE
+}
+
+# ── GROUND ────────────────────────────────────────────────
+Floor {
+  size 160 160
+  tileSize 4 4
+  appearance Asphalt {
+  }
+}
+
+# Plaza paved area (50×50 in center)
+DEF PLAZA Solid {
+  translation 0 0 0.01
+  children [
+    Shape {
+      appearance Pavement {
+        type "square stones"
+      }
+      geometry Box {
+        size 52 52 0.02
+      }
+    }
+  ]
+  name "plaza_ground"
+  locked TRUE
+}
+
+# Stage platform (center of plaza)
+DEF STAGE Solid {
+  translation 0 0 0.6
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.4 0.35 0.3
+        roughness 0.7
+      }
+      geometry Box {
+        size 12 8 1.2
+      }
+    }
+  ]
+  name "stage"
+  boundingObject Box {
+    size 12 8 1.2
+  }
+}
+
+# Canopy over stage
+DEF CANOPY Solid {
+  translation 0 0 4.5
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.7 0.1
+        roughness 0.5
+      }
+      geometry Box {
+        size 14 10 0.15
+      }
+    }
+  ]
+  name "canopy"
+  boundingObject Box {
+    size 14 10 0.15
+  }
+}
+
+# Roads around plaza
+Road {
+  translation -70 0 0.02
+  rotation 0 0 1 1.5708
+  name "road_w"
+  wayPoints [ 0 0 0, 140 0 0 ]
+  width 7
+  numberOfLanes 2
+  appearance Asphalt {
+  }
+}
+Road {
+  translation 63 0 0.02
+  rotation 0 0 1 1.5708
+  name "road_e"
+  wayPoints [ 0 0 0, 140 0 0 ]
+  width 7
+  numberOfLanes 2
+  appearance Asphalt {
+  }
+}
+Road {
+  translation 0 63 0.02
+  name "road_n"
+  wayPoints [ 0 0 0, 140 0 0 ]
+  width 7
+  numberOfLanes 2
+  appearance Asphalt {
+  }
+}
+Road {
+  translation -70 -63 0.02
+  name "road_s"
+  wayPoints [ 0 0 0, 140 0 0 ]
+  width 7
+  numberOfLanes 2
+  appearance Asphalt {
+  }
+}
+
+# ── SURROUNDING BUILDINGS ────────────────────────────────
+SimpleBuilding {
+  translation -55 50 0
+  name "bldg_nw"
+  floorNumber 6
+  floorHeight 3.5
+  corners [ 12 10, 12 -10, -12 -10, -12 10 ]
+  wallType "glass building"
+}
+SimpleBuilding {
+  translation 55 50 0
+  name "bldg_ne"
+  floorNumber 8
+  floorHeight 3.5
+  corners [ 12 10, 12 -10, -12 -10, -12 10 ]
+  wallType "blue glass building"
+}
+SimpleBuilding {
+  translation -55 -50 0
+  name "bldg_sw"
+  floorNumber 5
+  floorHeight 3.5
+  corners [ 12 10, 12 -10, -12 -10, -12 10 ]
+  wallType "windowed building"
+}
+SimpleBuilding {
+  translation 55 -50 0
+  name "bldg_se"
+  floorNumber 7
+  floorHeight 3.5
+  corners [ 12 10, 12 -10, -12 -10, -12 10 ]
+  wallType "highrise"
+}
+Hotel {
+  translation 0 -58 0
+  name "hotel_s"
+}
+
+# ── PERIMETER FENCING around event ───────────────────────
+UrbanFence {
+  translation -26 -26 0
+  name "fence_sw"
+}
+UrbanFence {
+  translation 26 -26 0
+  name "fence_se"
+}
+UrbanFence {
+  translation -26 26 0
+  name "fence_nw"
+}
+UrbanFence {
+  translation 26 26 0
+  name "fence_ne"
+}
+
+# ── STREET LIGHTS around plaza ────────────────────────────
+StreetLight { translation -27 0 0  name "sl_1" }
+StreetLight { translation 27 0 0   name "sl_2" }
+StreetLight { translation 0 -27 0  name "sl_3" }
+StreetLight { translation 0 27 0   name "sl_4" }
+StreetLight { translation -27 -27 0 name "sl_5" }
+StreetLight { translation 27 -27 0  name "sl_6" }
+StreetLight { translation -27 27 0  name "sl_7" }
+StreetLight { translation 27 27 0   name "sl_8" }
+
+# ── DENSE CROWD (40 pedestrians in plaza) ────────────────
+Pedestrian {
+  translation -20 -20 1.27
+  name "ped_0"
+  controllerArgs [ "--trajectory=-20 -20, -20 -10, -15 -5, -10 -15" "--speed=0.8" ]
+  shirtColor 0.8 0.2 0.2
+}
+Pedestrian {
+  translation -15 -20 1.27
+  name "ped_1"
+  controllerArgs [ "--trajectory=-15 -20, -15 -5, -5 0, -15 5" "--speed=0.7" ]
+  shirtColor 0.2 0.8 0.2
+}
+Pedestrian {
+  translation -10 -20 1.27
+  name "ped_2"
+  controllerArgs [ "--trajectory=-10 -20, -10 0, 5 5, -10 5" "--speed=0.9" ]
+  shirtColor 0.2 0.2 0.8
+}
+Pedestrian {
+  translation -5 -20 1.27
+  name "ped_3"
+  controllerArgs [ "--trajectory=-5 -20, 0 -10, 5 0, 0 10" "--speed=0.8" ]
+  shirtColor 0.8 0.8 0.2
+}
+Pedestrian {
+  translation 0 -20 1.27
+  name "ped_4"
+  controllerArgs [ "--trajectory=0 -20, 0 -5, 10 -5, 10 5" "--speed=0.7" ]
+  shirtColor 0.8 0.4 0.1
+}
+Pedestrian {
+  translation 5 -20 1.27
+  name "ped_5"
+  controllerArgs [ "--trajectory=5 -20, 5 0, -5 0, -5 -20" "--speed=0.9" ]
+  shirtColor 0.3 0.7 0.8
+}
+Pedestrian {
+  translation 10 -20 1.27
+  name "ped_6"
+  controllerArgs [ "--trajectory=10 -20, 15 -10, 20 0, 15 10" "--speed=0.8" ]
+  shirtColor 0.7 0.2 0.7
+}
+Pedestrian {
+  translation 15 -20 1.27
+  name "ped_7"
+  controllerArgs [ "--trajectory=15 -20, 20 -15, 15 -5, 10 -15" "--speed=0.7" ]
+  shirtColor 0.5 0.5 0.1
+}
+Pedestrian {
+  translation 20 -20 1.27
+  name "ped_8"
+  controllerArgs [ "--trajectory=20 -20, 20 -5, 15 0, 20 5" "--speed=0.8" ]
+  shirtColor 0.1 0.6 0.5
+}
+Pedestrian {
+  translation -20 -15 1.27
+  name "ped_9"
+  controllerArgs [ "--trajectory=-20 -15, -5 -15, 5 -5, -5 5" "--speed=0.9" ]
+  shirtColor 0.9 0.3 0.3
+}
+Pedestrian {
+  translation -20 -10 1.27
+  name "ped_10"
+  controllerArgs [ "--trajectory=-20 -10, -10 -10, -5 -5, -15 5" "--speed=0.7" ]
+  shirtColor 0.3 0.9 0.4
+}
+Pedestrian {
+  translation -20 -5 1.27
+  name "ped_11"
+  controllerArgs [ "--trajectory=-20 -5, -15 0, -20 5, -15 -5" "--speed=0.8" ]
+  shirtColor 0.4 0.3 0.9
+}
+Pedestrian {
+  translation -20 0 1.27
+  name "ped_12"
+  controllerArgs [ "--trajectory=-20 0, -10 5, 0 0, -10 -5" "--speed=0.6" ]
+  shirtColor 0.9 0.7 0.1
+}
+Pedestrian {
+  translation -20 5 1.27
+  name "ped_13"
+  controllerArgs [ "--trajectory=-20 5, -15 10, -20 15, -15 5" "--speed=0.8" ]
+  shirtColor 0.6 0.1 0.8
+}
+Pedestrian {
+  translation -20 10 1.27
+  name "ped_14"
+  controllerArgs [ "--trajectory=-20 10, -10 15, -5 10, -15 5" "--speed=0.7" ]
+  shirtColor 0.2 0.8 0.7
+}
+Pedestrian {
+  translation -20 15 1.27
+  name "ped_15"
+  controllerArgs [ "--trajectory=-20 15, -15 20, -5 15, -10 10" "--speed=0.9" ]
+  shirtColor 0.8 0.5 0.3
+}
+Pedestrian {
+  translation -20 20 1.27
+  name "ped_16"
+  controllerArgs [ "--trajectory=-20 20, -10 20, 0 15, -10 10" "--speed=0.8" ]
+  shirtColor 0.4 0.6 0.2
+}
+Pedestrian {
+  translation -15 20 1.27
+  name "ped_17"
+  controllerArgs [ "--trajectory=-15 20, -5 20, 5 15, -5 10" "--speed=0.7" ]
+  shirtColor 0.7 0.7 0.7
+}
+Pedestrian {
+  translation -10 20 1.27
+  name "ped_18"
+  controllerArgs [ "--trajectory=-10 20, 0 20, 5 10, 0 5" "--speed=0.8" ]
+  shirtColor 0.9 0.2 0.5
+}
+Pedestrian {
+  translation -5 20 1.27
+  name "ped_19"
+  controllerArgs [ "--trajectory=-5 20, 5 20, 10 15, 5 5" "--speed=0.6" ]
+  shirtColor 0.2 0.5 0.9
+}
+Pedestrian {
+  translation 0 20 1.27
+  name "ped_20"
+  controllerArgs [ "--trajectory=0 20, 10 15, 15 5, 10 -5" "--speed=0.9" ]
+  shirtColor 0.6 0.8 0.1
+}
+Pedestrian {
+  translation 5 20 1.27
+  name "ped_21"
+  controllerArgs [ "--trajectory=5 20, 15 20, 20 10, 15 0" "--speed=0.7" ]
+  shirtColor 0.1 0.9 0.6
+}
+Pedestrian {
+  translation 10 20 1.27
+  name "ped_22"
+  controllerArgs [ "--trajectory=10 20, 20 20, 20 10, 15 0" "--speed=0.8" ]
+  shirtColor 0.8 0.1 0.7
+}
+Pedestrian {
+  translation 15 20 1.27
+  name "ped_23"
+  controllerArgs [ "--trajectory=15 20, 20 15, 15 10, 10 15" "--speed=0.9" ]
+  shirtColor 0.3 0.4 0.7
+}
+Pedestrian {
+  translation 20 20 1.27
+  name "ped_24"
+  controllerArgs [ "--trajectory=20 20, 20 10, 15 5, 10 10" "--speed=0.7" ]
+  shirtColor 0.7 0.3 0.2
+}
+Pedestrian {
+  translation 20 15 1.27
+  name "ped_25"
+  controllerArgs [ "--trajectory=20 15, 20 5, 15 0, 10 5" "--speed=0.8" ]
+  shirtColor 0.5 0.9 0.5
+}
+Pedestrian {
+  translation 20 10 1.27
+  name "ped_26"
+  controllerArgs [ "--trajectory=20 10, 20 -5, 15 -10, 10 -5" "--speed=0.6" ]
+  shirtColor 0.9 0.5 0.8
+}
+Pedestrian {
+  translation 20 5 1.27
+  name "ped_27"
+  controllerArgs [ "--trajectory=20 5, 15 -5, 20 -10, 15 0" "--speed=0.9" ]
+  shirtColor 0.2 0.7 0.4
+}
+Pedestrian {
+  translation 20 0 1.27
+  name "ped_28"
+  controllerArgs [ "--trajectory=20 0, 15 -10, 10 -15, 15 -5" "--speed=0.7" ]
+  shirtColor 0.6 0.4 0.8
+}
+Pedestrian {
+  translation 20 -5 1.27
+  name "ped_29"
+  controllerArgs [ "--trajectory=20 -5, 20 -15, 15 -20, 10 -15" "--speed=0.8" ]
+  shirtColor 0.1 0.3 0.8
+}
+Pedestrian {
+  translation -8 -8 1.27
+  name "ped_30"
+  controllerArgs [ "--trajectory=-8 -8, 8 -8, 8 8, -8 8" "--speed=0.7" ]
+  shirtColor 0.8 0.6 0.2
+}
+Pedestrian {
+  translation 8 -8 1.27
+  name "ped_31"
+  controllerArgs [ "--trajectory=8 -8, 8 8, -8 8, -8 -8" "--speed=0.8" ]
+  shirtColor 0.2 0.6 0.8
+}
+Pedestrian {
+  translation 0 -12 1.27
+  name "ped_32"
+  controllerArgs [ "--trajectory=0 -12, 12 0, 0 12, -12 0" "--speed=0.6" ]
+  shirtColor 0.7 0.2 0.4
+}
+Pedestrian {
+  translation 0 12 1.27
+  name "ped_33"
+  controllerArgs [ "--trajectory=0 12, -12 0, 0 -12, 12 0" "--speed=0.8" ]
+  shirtColor 0.4 0.8 0.3
+}
+Pedestrian {
+  translation -12 0 1.27
+  name "ped_34"
+  controllerArgs [ "--trajectory=-12 0, 0 12, 12 0, 0 -12" "--speed=0.7" ]
+  shirtColor 0.9 0.1 0.2
+}
+Pedestrian {
+  translation 12 0 1.27
+  name "ped_35"
+  controllerArgs [ "--trajectory=12 0, 0 -12, -12 0, 0 12" "--speed=0.9" ]
+  shirtColor 0.1 0.8 0.9
+}
+Pedestrian {
+  translation -5 -5 1.27
+  name "ped_36"
+  controllerArgs [ "--trajectory=-5 -5, 5 -5, 5 5, -5 5" "--speed=0.8" ]
+  shirtColor 0.6 0.6 0.8
+}
+Pedestrian {
+  translation 5 -5 1.27
+  name "ped_37"
+  controllerArgs [ "--trajectory=5 -5, 5 5, -5 5, -5 -5" "--speed=0.7" ]
+  shirtColor 0.8 0.8 0.4
+}
+Pedestrian {
+  translation 5 5 1.27
+  name "ped_38"
+  controllerArgs [ "--trajectory=5 5, -5 5, -5 -5, 5 -5" "--speed=0.9" ]
+  shirtColor 0.3 0.3 0.6
+}
+Pedestrian {
+  translation -5 5 1.27
+  name "ped_39"
+  controllerArgs [ "--trajectory=-5 5, -5 -5, 5 -5, 5 5" "--speed=0.8" ]
+  shirtColor 0.7 0.5 0.5
+}
+
+# ── UAVs above plaza ──────────────────────────────────────
+DEF UAV_0 Mavic2Pro {
+  translation 0 0 12
+  name "UAV_0"
+  controller "uav_camera"
+}
+DEF UAV_1 Mavic2Pro {
+  translation 10 0 12
+  name "UAV_1"
+  controller "uav_camera"
+}
+DEF UAV_2 Mavic2Pro {
+  translation -10 0 12
+  name "UAV_2"
+  controller "uav_camera"
+}
+DEF UAV_3 Mavic2Pro {
+  translation 0 10 12
+  name "UAV_3"
+  controller "uav_camera"
+}
+DEF UAV_4 Mavic2Pro {
+  translation 0 -10 12
+  name "UAV_4"
+  controller "uav_camera"
+}
+
+# ── BIRDS ─────────────────────────────────────────────────
+DEF BIRD_0 Bird { translation 20 15 8  name "bird_0" }
+DEF BIRD_1 Bird { translation -18 12 7 name "bird_1" color 0.35 0.28 0.18 }
+DEF BIRD_2 Bird { translation 12 -18 9 name "bird_2" color 0.2 0.2 0.15 }
+DEF BIRD_3 Bird { translation -15 -15 7 name "bird_3" color 0.4 0.35 0.25 }
+DEF BIRD_4 Bird { translation 25 0 8   name "bird_4" }
+DEF BIRD_5 Bird { translation -25 5 9  name "bird_5" color 0.3 0.22 0.14 }
+DEF BIRD_6 Bird { translation 5 25 7   name "bird_6" color 0.45 0.38 0.28 }
+DEF BIRD_7 Bird { translation -8 -22 8 name "bird_7" color 0.25 0.18 0.12 }
+
+# ── SUPERVISOR ────────────────────────────────────────────
+Robot {
+  translation 0 0 0
+  name "swarm_supervisor"
+  controller "uav_swarm_controller"
+  supervisor TRUE
+  children []
+  boundingObject NULL
+  physics NULL
+}

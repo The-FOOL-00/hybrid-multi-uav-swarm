@@ -1,0 +1,438 @@
+#VRML_SIM R2025a utf8
+# World 5: Industrial - Port/warehouse with containers
+# ENU: Z=Up, X=East, Y=North
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Asphalt.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/road/protos/Road.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/Warehouse.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/freight/protos/IntermodalContainer.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/traffic/protos/StreetLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/street_furniture/protos/UrbanFence.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/vehicles/protos/toyota/ToyotaPriusSimple.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/humans/pedestrian/protos/Pedestrian.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+EXTERNPROTO "../protos/Bird.proto"
+
+WorldInfo {
+  info [
+    "Multi-UAV Surveillance Research Environment"
+    "STIRS-2025 Project - SSN College of Engineering"
+    "Scenario: Industrial Port with Containers"
+  ]
+  title "Smart City UAV Surveillance - Industrial"
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+  gravity -9.806
+  CFM 0.00001
+  ERP 0.2
+}
+
+Viewpoint {
+  orientation -0.16 0.22 0.96 1.32
+  position 60 -60 50
+  near 0.5
+  follow "UAV_0"
+  followSmoothness 0.5
+}
+
+TexturedBackground {
+  texture "cloudy"
+  luminosity 1.0
+}
+TexturedBackgroundLight {
+  castShadows FALSE
+}
+
+# ── GROUND (concrete) ─────────────────────────────────────
+Floor {
+  size 180 180
+  tileSize 5 5
+  appearance Asphalt {
+  }
+}
+
+# ── ROADS (access roads) ──────────────────────────────────
+Road {
+  translation -80 -20 0.02
+  name "road_main"
+  wayPoints [ 0 0 0, 160 0 0 ]
+  width 8
+  numberOfLanes 2
+  appearance Asphalt {
+  }
+}
+Road {
+  translation -80 20 0.02
+  name "road_secondary"
+  wayPoints [ 0 0 0, 160 0 0 ]
+  width 6
+  numberOfLanes 2
+  appearance Asphalt {
+  }
+}
+Road {
+  translation 0 -80 0.02
+  rotation 0 0 1 1.5708
+  name "road_vertical"
+  wayPoints [ 0 0 0, 160 0 0 ]
+  width 6
+  numberOfLanes 2
+  appearance Asphalt {
+  }
+}
+
+# ── WAREHOUSES ────────────────────────────────────────────
+Warehouse {
+  translation -50 50 0
+  rotation 0 0 1 1.5708
+  name "warehouse_1"
+}
+Warehouse {
+  translation 30 50 0
+  rotation 0 0 1 1.5708
+  name "warehouse_2"
+}
+
+# ── CRANE STRUCTURE (built from Solid/Shape) ──────────────
+DEF CRANE_BASE Solid {
+  translation 55 -50 5
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.6 0.1
+        roughness 0.4
+        metalness 0.6
+      }
+      geometry Box {
+        size 3 3 10
+      }
+    }
+  ]
+  name "crane_base"
+  boundingObject Box { size 3 3 10 }
+}
+DEF CRANE_ARM Solid {
+  translation 55 -35 12
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.6 0.1
+        roughness 0.4
+        metalness 0.6
+      }
+      geometry Box {
+        size 1.5 35 1.5
+      }
+    }
+  ]
+  name "crane_arm"
+  boundingObject Box { size 1.5 35 1.5 }
+}
+DEF CRANE_MAST Solid {
+  translation 55 -50 15
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.7 0.5 0.1
+        roughness 0.4
+        metalness 0.6
+      }
+      geometry Box {
+        size 1 1 8
+      }
+    }
+  ]
+  name "crane_mast"
+  boundingObject Box { size 1 1 8 }
+}
+
+# ── INTERMODAL CONTAINERS (stacked rows) ─────────────────
+# Row 1 - Red containers (ground level)
+IntermodalContainer {
+  translation -40 -50 1.25
+  name "cont_r1"
+  color 0.8 0.1 0.1
+}
+IntermodalContainer {
+  translation -27 -50 1.25
+  name "cont_r2"
+  color 0.8 0.1 0.1
+}
+IntermodalContainer {
+  translation -14 -50 1.25
+  name "cont_r3"
+  color 0.8 0.1 0.1
+}
+# Row 1 - Red containers (stacked level 2)
+IntermodalContainer {
+  translation -40 -50 3.75
+  name "cont_r4"
+  color 0.8 0.15 0.15
+}
+IntermodalContainer {
+  translation -27 -50 3.75
+  name "cont_r5"
+  color 0.8 0.15 0.15
+}
+
+# Row 2 - Blue containers
+IntermodalContainer {
+  translation -40 -60 1.25
+  name "cont_b1"
+  color 0.1 0.2 0.8
+}
+IntermodalContainer {
+  translation -27 -60 1.25
+  name "cont_b2"
+  color 0.1 0.2 0.8
+}
+IntermodalContainer {
+  translation -14 -60 1.25
+  name "cont_b3"
+  color 0.1 0.2 0.8
+}
+# Stacked blue
+IntermodalContainer {
+  translation -40 -60 3.75
+  name "cont_b4"
+  color 0.15 0.25 0.8
+}
+IntermodalContainer {
+  translation -14 -60 3.75
+  name "cont_b5"
+  color 0.15 0.25 0.8
+}
+
+# Row 3 - Green containers
+IntermodalContainer {
+  translation -1 -50 1.25
+  name "cont_g1"
+  color 0.1 0.7 0.2
+}
+IntermodalContainer {
+  translation 12 -50 1.25
+  name "cont_g2"
+  color 0.1 0.7 0.2
+}
+IntermodalContainer {
+  translation 25 -50 1.25
+  name "cont_g3"
+  color 0.1 0.7 0.2
+}
+IntermodalContainer {
+  translation 12 -50 3.75
+  name "cont_g4"
+  color 0.15 0.7 0.25
+}
+
+# Row 4 - Grey/yellow containers
+IntermodalContainer {
+  translation -1 -60 1.25
+  name "cont_y1"
+  color 0.8 0.7 0.1
+}
+IntermodalContainer {
+  translation 12 -60 1.25
+  name "cont_y2"
+  color 0.8 0.7 0.1
+}
+IntermodalContainer {
+  translation 25 -60 1.25
+  name "cont_y3"
+  color 0.6 0.6 0.6
+}
+IntermodalContainer {
+  translation 38 -60 1.25
+  name "cont_y4"
+  color 0.6 0.6 0.6
+}
+# Triple stack grey
+IntermodalContainer {
+  translation 38 -60 3.75
+  name "cont_y5"
+  color 0.55 0.55 0.55
+}
+IntermodalContainer {
+  translation 38 -60 6.25
+  name "cont_y6"
+  color 0.5 0.5 0.5
+}
+
+# Row 5 - Mixed near warehouse
+IntermodalContainer {
+  translation 38 -50 1.25
+  name "cont_m1"
+  color 0.7 0.35 0.1
+}
+IntermodalContainer {
+  translation 51 -50 1.25
+  name "cont_m2"
+  color 0.5 0.1 0.5
+}
+IntermodalContainer {
+  translation 51 -60 1.25
+  name "cont_m3"
+  color 0.3 0.5 0.7
+}
+IntermodalContainer {
+  translation 51 -50 3.75
+  name "cont_m4"
+  color 0.5 0.12 0.5
+}
+
+# ── PERIMETER FENCE ────────────────────────────────────────
+UrbanFence {
+  translation -80 -80 0
+  name "fence_sw"
+}
+UrbanFence {
+  translation -60 -80 0
+  name "fence_s1"
+}
+UrbanFence {
+  translation -40 -80 0
+  name "fence_s2"
+}
+UrbanFence {
+  translation -20 -80 0
+  name "fence_s3"
+}
+UrbanFence {
+  translation 0 -80 0
+  name "fence_s4"
+}
+UrbanFence {
+  translation 20 -80 0
+  name "fence_s5"
+}
+UrbanFence {
+  translation 40 -80 0
+  name "fence_s6"
+}
+UrbanFence {
+  translation 60 -80 0
+  name "fence_s7"
+}
+UrbanFence {
+  translation 80 -80 0
+  name "fence_se"
+}
+
+# ── STREET LIGHTS ─────────────────────────────────────────
+StreetLight { translation -60 -18 0  name "sl_1" }
+StreetLight { translation -40 -18 0  name "sl_2" }
+StreetLight { translation -20 -18 0  name "sl_3" }
+StreetLight { translation 0 -18 0   name "sl_4" }
+StreetLight { translation 20 -18 0  name "sl_5" }
+StreetLight { translation 40 -18 0  name "sl_6" }
+StreetLight { translation 60 -18 0  name "sl_7" }
+
+# ── VEHICLES (industrial trucks/cars) ────────────────────
+ToyotaPriusSimple {
+  translation -65 -15 0.31
+  rotation 0 0 1 0
+  name "vehicle_1"
+}
+ToyotaPriusSimple {
+  translation -65 15 0.31
+  rotation 0 0 1 0
+  name "vehicle_2"
+}
+ToyotaPriusSimple {
+  translation 65 -15 0.31
+  rotation 0 0 1 3.14159
+  name "vehicle_3"
+}
+
+# ── WORKERS (10 pedestrians) ──────────────────────────────
+Pedestrian {
+  translation -40 -25 1.27
+  name "worker_0"
+  controllerArgs [ "--trajectory=-40 -25, -40 -15, -20 -15, -20 -25" "--speed=1.0" ]
+  shirtColor 0.8 0.6 0.1
+}
+Pedestrian {
+  translation -20 -25 1.27
+  name "worker_1"
+  controllerArgs [ "--trajectory=-20 -25, 0 -25, 0 -15, -20 -15" "--speed=1.1" ]
+  shirtColor 0.8 0.6 0.1
+}
+Pedestrian {
+  translation 0 -25 1.27
+  name "worker_2"
+  controllerArgs [ "--trajectory=0 -25, 20 -25, 20 -15, 0 -15" "--speed=0.9" ]
+  shirtColor 0.7 0.5 0.1
+}
+Pedestrian {
+  translation 20 -25 1.27
+  name "worker_3"
+  controllerArgs [ "--trajectory=20 -25, 40 -25" "--speed=1.2" ]
+  shirtColor 0.8 0.6 0.1
+}
+Pedestrian {
+  translation -40 -45 1.27
+  name "worker_4"
+  controllerArgs [ "--trajectory=-40 -45, -14 -45, -14 -65, -40 -65" "--speed=1.0" ]
+  shirtColor 0.6 0.5 0.1
+}
+Pedestrian {
+  translation 0 -45 1.27
+  name "worker_5"
+  controllerArgs [ "--trajectory=0 -45, 25 -45, 25 -65, 0 -65" "--speed=1.1" ]
+  shirtColor 0.8 0.6 0.1
+}
+Pedestrian {
+  translation 38 -45 1.27
+  name "worker_6"
+  controllerArgs [ "--trajectory=38 -45, 55 -45" "--speed=0.9" ]
+  shirtColor 0.7 0.5 0.2
+}
+Pedestrian {
+  translation -55 35 1.27
+  name "worker_7"
+  controllerArgs [ "--trajectory=-55 35, -40 35, -40 60, -55 60" "--speed=1.0" ]
+  shirtColor 0.8 0.6 0.1
+}
+Pedestrian {
+  translation 15 35 1.27
+  name "worker_8"
+  controllerArgs [ "--trajectory=15 35, 45 35, 45 60, 15 60" "--speed=1.1" ]
+  shirtColor 0.7 0.6 0.1
+}
+Pedestrian {
+  translation -10 -5 1.27
+  name "worker_9"
+  controllerArgs [ "--trajectory=-10 -5, -10 -18, 10 -18, 10 -5" "--speed=1.2" ]
+  shirtColor 0.8 0.5 0.1
+}
+
+# ── UAVs ──────────────────────────────────────────────────
+DEF UAV_0 Mavic2Pro { translation 0 0 12  name "UAV_0" controller "uav_camera" }
+DEF UAV_1 Mavic2Pro { translation 10 0 12 name "UAV_1" controller "uav_camera" }
+DEF UAV_2 Mavic2Pro { translation -10 0 12 name "UAV_2" controller "uav_camera" }
+DEF UAV_3 Mavic2Pro { translation 0 10 12 name "UAV_3" controller "uav_camera" }
+DEF UAV_4 Mavic2Pro { translation 0 -10 12 name "UAV_4" controller "uav_camera" }
+
+# ── BIRDS (5) ─────────────────────────────────────────────
+DEF BIRD_0 Bird { translation 20 20 8  name "bird_0" }
+DEF BIRD_1 Bird { translation -25 30 7 name "bird_1" color 0.35 0.28 0.18 }
+DEF BIRD_2 Bird { translation 15 -30 9 name "bird_2" color 0.2 0.2 0.15 }
+DEF BIRD_3 Bird { translation -20 -25 8 name "bird_3" color 0.4 0.35 0.25 }
+DEF BIRD_4 Bird { translation 30 10 7  name "bird_4" }
+
+# ── SUPERVISOR ────────────────────────────────────────────
+Robot {
+  translation 0 0 0
+  name "swarm_supervisor"
+  controller "uav_swarm_controller"
+  supervisor TRUE
+  children []
+  boundingObject NULL
+  physics NULL
+}
