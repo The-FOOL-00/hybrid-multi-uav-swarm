@@ -2,6 +2,8 @@
 # STIRS-2025 | SSN College of Engineering
 # Project: Attention-Guided Decentralized Multi-UAV Surveillance
 #          for Real-Time Crowd Monitoring in Smart Cities using POMDP
+#
+# NOTE: This file is the canonical copy in configs/.
 
 project:
   name: "Attention-Guided Multi-UAV Surveillance"
@@ -112,10 +114,23 @@ birds:
   controller: "bird_controller"
 
 logging:
-  output_dir: "logs/"
+  output_dir: "experiments/logs/"
   metrics_interval_steps: 125
   metrics:
     - coverage_percent
     - crowd_agents_in_fov
     - active_uavs
     - uav_positions
+
+# ── RL Training Parameters (future use) ─────────────────────────────────────
+rl:
+  enabled: false               # set true when RL training is active
+  algorithm: "PPO"             # planned: PPO, MAPPO
+  episodes: 1000
+  max_steps_per_episode: 2000
+  learning_rate: 3.0e-4
+  gamma: 0.99
+  reward_weights:
+    coverage: 0.6
+    collision_penalty: -1.0
+    tracking: 0.4
