@@ -2,10 +2,44 @@
 Multi-UAV Supervisor Controller
 POMDP-based decentralized surveillance for smart-city crowd monitoring.
 Coordinate system: ENU (East=X, North=Y, Up=Z)
+
+Camera modes (keyboard keys 1 / 2 / 3 in GUI mode):
+  1 - Cinematic city view  : fixed SE-corner position, pans to track UAV_0
+  2 - Tracking shot        : chase-cam follows UAV_0 from behind
+  3 - Top-down overview    : bird's-eye view, all 5 drones visible
 """
 from controller import Supervisor
 import math
 import random
+
+
+# ── Camera mode presets ────────────────────────────────────────────────────────
+# position: [x, y, z]  |  orientation: [ax, ay, az, angle]
+# In ENU (Z-up), default Viewpoint orientation looks along -Z (straight down).
+# The existing oblique angle -0.16 0.22 0.96 1.32 gives a good city view.
+_CAM_MODES = {
+    1: {
+        "label":       "Cinematic city (Pan & Tilt)",
+        "position":    [80.0, -100.0, 75.0],
+        "orientation": [-0.16, 0.22, 0.96, 1.32],
+        "follow":      "UAV_0",
+        "followType":  "Pan and Tilt Shot",
+    },
+    2: {
+        "label":       "Tracking shot (chase UAV_0)",
+        "position":    [80.0, -100.0, 75.0],   # irrelevant for Tracking Shot
+        "orientation": [-0.16, 0.22, 0.96, 1.32],
+        "follow":      "UAV_0",
+        "followType":  "Tracking Shot",
+    },
+    3: {
+        "label":       "Top-down overview",
+        "position":    [0.0, 0.0, 130.0],
+        "orientation": [0.0, 0.0, 1.0, 0.0],  # identity = look along -Z = straight down
+        "follow":      "",
+        "followType":  "None",
+    },
+}
 
 
 class MultiUAVSurveillance:
@@ -45,8 +79,67 @@ class MultiUAVSurveillance:
         self.step_count = 0
         self.coverage_log = []
 
+        # ── Camera control ─────────────────────────────────────────────────────
+        self.viewpoint = self.supervisor.getFromDef("MAIN_VIEW")
+        self.cam_mode = 1
+        try:
+            self.keyboard = self.supervisor.getKeyboard()
+            self.keyboard.enable(self.timestep)
+            self._kb_available = True
+        except Exception:
+            self._kb_available = False
+
         print(f"[UAV Controller] UAVs={len(self.uavs)}, "
               f"Birds={len(self.birds)}, Crowd={len(self.crowd_nodes)}")
+        self._print_camera_help()
+
+    # ── Camera control ─────────────────────────────────────────────────────────
+
+    def _print_camera_help(self):
+        """Print camera mode instructions once at startup."""
+        print("\n" + "=" * 52)
+        print("  CAMERA MODES  (click Webots 3D view first)")
+        print("  Key 1 : Cinematic city view  [default]")
+        print("  Key 2 : Chase-cam  (tracks UAV_0 closely)")
+        print("  Key 3 : Top-down overview  (all drones visible)")
+        print("=" * 52 + "\n")
+
+    def _set_camera_mode(self, mode: int):
+        """Switch Viewpoint to the requested camera mode (1/2/3)."""
+        if self.viewpoint is None:
+            print(f"[Camera] MAIN_VIEW not found in scene — skipping")
+            return
+        cfg = _CAM_MODES.get(mode)
+        if cfg is None:
+            return
+        try:
+            self.viewpoint.getField("position").setSFVec3f(cfg["position"])
+            self.viewpoint.getField("orientation").setSFRotation(cfg["orientation"])
+            self.viewpoint.getField("follow").setSFString(cfg["follow"])
+            self.viewpoint.getField("followType").setSFString(cfg["followType"])
+            self.cam_mode = mode
+            print(f"[Camera] Mode {mode}: {cfg['label']}")
+        except Exception as e:
+            print(f"[Camera] Could not switch mode: {e}")
+
+    def _handle_keyboard(self):
+        """Read keyboard and switch camera mode on 1/2/3 keys."""
+        if not self._kb_available:
+            return
+        try:
+            key = self.keyboard.getKey()
+            while key > 0:
+                if key == ord('1'):
+                    self._set_camera_mode(1)
+                elif key == ord('2'):
+                    self._set_camera_mode(2)
+                elif key == ord('3'):
+                    self._set_camera_mode(3)
+                key = self.keyboard.getKey()
+        except Exception:
+            pass
+
+    # ── Crowd collection ───────────────────────────────────────────────────────
 
     def _collect_crowd(self):
         """Find all Pedestrian / CrowdAgent nodes in the scene."""
@@ -66,7 +159,7 @@ class MultiUAVSurveillance:
                                  "worker" in def_name.lower()):
                     self.crowd_nodes.append(node)
 
-    # ── UAV patrol ────────────────────────────────────────────────────────────
+    # ── UAV patrol ─────────────────────────────────────────────────────────────
 
     def _patrol_target(self, uav_idx, t):
         """Circular formation with POMDP-style attention bias."""
@@ -109,7 +202,7 @@ class MultiUAVSurveillance:
             target = self._patrol_target(i, t)
             tf.setSFVec3f(target)
 
-    # ── Bird flock (fallback if bird_controller not running) ─────────────────
+    # ── Bird flock (fallback if bird_controller not running) ──────────────────
 
     def update_birds(self):
         t = self.step_count
@@ -126,10 +219,10 @@ class MultiUAVSurveillance:
             except Exception:
                 pass
 
-    # ── Surveillance metrics ──────────────────────────────────────────────────
+    # ── Surveillance metrics ───────────────────────────────────────────────────
 
     def compute_coverage(self):
-        """Grid-cell coverage metric (percentage of 200×200m arena)."""
+        """Grid-cell coverage metric (percentage of 200x200m arena)."""
         covered = set()
         cell = 5.0
         half = 90.0
@@ -153,18 +246,20 @@ class MultiUAVSurveillance:
             print(f"\n{'='*52}")
             print(f" Step {self.step_count:>6} | "
                   f"Coverage {cov:5.1f}% | "
-                  f"Crowd {len(self.crowd_nodes):>3}")
+                  f"Crowd {len(self.crowd_nodes):>3} | "
+                  f"Cam Mode {self.cam_mode}")
             for i, node in enumerate(self.uavs):
                 p = node.getPosition()
                 print(f"   UAV_{i}: ({p[0]:6.1f}, {p[1]:6.1f}, {p[2]:5.1f})")
             print(f"{'='*52}")
 
-    # ── Main loop ─────────────────────────────────────────────────────────────
+    # ── Main loop ──────────────────────────────────────────────────────────────
 
     def run(self):
         print("[UAV Controller] Surveillance system online.")
         while self.supervisor.step(self.timestep) != -1:
             self.step_count += 1
+            self._handle_keyboard()      # camera mode switching (GUI only)
             self.update_uavs()
             if self.birds:
                 self.update_birds()

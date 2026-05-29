@@ -5,53 +5,77 @@
 **Institution:** SSN College of Engineering  
 **Researchers:** Sharruk S, Sundareswaran, Jeswin Joel  
 **Guide:** Dr. E. Selvam  
-**Simulator:** Webots R2025a  
+**Simulator:** Webots R2025a
 
 ---
 
 ## Project Overview
 
-This simulation implements a multi-UAV surveillance system using:
-- **5 DJI Mavic 2 Pro UAVs** patrolling in adaptive circular formation
-- **POMDP-based attention mechanism** that biases UAVs toward crowd density
-- **5 distinct smart-city scenarios** (downtown, event, residential, mixed, industrial)
+This simulation implements a **multi-UAV surveillance system** for smart-city crowd monitoring:
+
+- **5 DJI Mavic2Pro UAVs** patrolling in adaptive circular formation
+- **POMDP attention mechanism** that biases UAVs toward crowd density (α = 0.15)
+- **5 distinct smart-city scenarios** — downtown, event, residential, mixed, industrial
 - **Boids-based bird flocking** for environmental realism
-- **Built-in pedestrian animation** using Webots Pedestrian PROTO
+- **Pedestrian crowd simulation** using Webots built-in Pedestrian PROTO
 
-### Coordinate System
-All world files use **ENU (East-North-Up)**:
-- X = East (horizontal)
-- Y = North (horizontal)
-- Z = Up / Altitude
+### Research Focus
 
-UAVs patrol at **Z = 10–15 m altitude**.
+| ✅ In Scope | ❌ Out of Scope |
+|-------------|----------------|
+| Multi-UAV coordination | Image / object detection |
+| Autonomous navigation | Computer vision pipeline |
+| Coverage optimization | ROS2 integration |
+| Collision avoidance | Suspicious activity detection |
+| Altitude optimization | |
+| Dynamic crowd movement | |
 
 ---
 
 ## Project Structure
 
 ```
-multi-uav-webots/
-├── worlds/
-│   ├── downtown.wbt       # Dense urban, 3×3 road grid, 15 buildings
-│   ├── event.wbt          # Central plaza, 40 crowd agents
-│   ├── residential.wbt    # Low-density, parks, 8 houses
-│   ├── mixed.wbt          # Mixed commercial/residential, 35 agents
-│   └── industrial.wbt     # Warehouse, containers, 10 workers
-├── controllers/
-│   ├── uav_swarm_controller/
-│   │   └── uav_swarm_controller.py  # Supervisor: moves all UAVs + birds
-│   ├── bird_controller/
-│   │   └── bird_controller.py       # Per-bird Boids orbit (self-supervisor)
-│   └── crowd_controller/
-│       └── crowd_controller.py      # CrowdAgent state-machine supervisor
-├── protos/
-│   ├── Bird.proto          # Custom flying bird (supervisor Robot)
-│   └── CrowdAgent.proto    # Custom pedestrian agent (supervisor Robot)
-├── config/
+hybrid-multi-uav-swarm/
+├── worlds/                         # Webots world files (5 scenarios)
+│   ├── downtown.wbt                # Dense urban, 3×3 road grid, 15 buildings
+│   ├── event.wbt                   # Central plaza, 40 crowd agents
+│   ├── residential.wbt             # Low-density, parks, 8 houses
+│   ├── mixed.wbt                   # Mixed commercial/residential, 35 agents
+│   └── industrial.wbt              # Warehouse, containers, 10 workers
+│
+├── controllers/                    # Webots controllers (DO NOT MOVE)
+│   ├── uav_swarm_controller/       # Main supervisor: POMDP + UAV movement
+│   ├── bird_controller/            # Per-bird Boids orbit (self-supervisor)
+│   ├── crowd_controller/           # CrowdAgent state machine (optional)
+│   └── uav_camera/                 # Per-drone camera + propeller controller
+│
+├── rl/                             # RL training skeleton (not yet active)
+│   ├── gym_wrapper/                # OpenAI Gym-compatible env interface
+│   ├── rewards/                    # Coverage, tracking, collision rewards
+│   ├── training/                   # Training loop + experiment management
+│   └── algorithms/                 # PPO → MAPPO → QMIX roadmap
+│
+├── experiments/                    # Simulation outputs
+│   ├── metrics/                    # JSON metrics per run
+│   ├── screenshots/                # PNG figures for paper
+│   ├── videos/                     # Recorded simulations
+│   └── logs/                       # Text logs
+│
+├── configs/                        # Canonical configuration (with RL section)
 │   └── environment_config.yaml
-├── logs/                   # Simulation output logs
-├── run_simulation.py       # Launch script
+│
+├── protos/                         # Custom Webots PROTOs
+│   ├── Bird.proto                  # Flying bird (supervisor Robot)
+│   └── CrowdAgent.proto            # Pedestrian agent (supervisor Robot)
+│
+├── models/                         # Saved RL model checkpoints
+│
+├── docs/                           # Project documentation
+│   ├── architecture.md             # System design, data flow, POMDP details
+│   ├── workflow.md                 # When to use GUI vs headless mode
+│   └── current_status.md          # What works, what's next
+│
+├── run_simulation.py               # Main launch script (GUI + headless)
 └── README.md
 ```
 
@@ -60,108 +84,207 @@ multi-uav-webots/
 ## Quick Start
 
 ### Prerequisites
-- Webots R2025a installed at `C:\Program Files\Webots\`
-- Python 3.8+ (for the launch script)
 
-### Launch via Script
-```bash
-# From project root
+- **Webots R2025a** installed at `C:\Program Files\Webots\`
+- **Python 3.8+** (for the launch script only — no extra packages needed)
+
+### Launch Simulation
+
+```powershell
+# GUI mode — full 3D visualization (default scenario: downtown)
+python run_simulation.py
+
+# GUI mode — specific scenario
 python run_simulation.py --scenario downtown
 python run_simulation.py --scenario event
 python run_simulation.py --scenario residential
 python run_simulation.py --scenario mixed
 python run_simulation.py --scenario industrial
+
+# Headless mode — no window, faster (for experiments)
+python run_simulation.py --headless
+python run_simulation.py --scenario event --headless
+
+# List all scenarios
+python run_simulation.py --list
+
+# Help
+python run_simulation.py --help
 ```
 
 ### Launch Directly in Webots
+
 1. Open Webots R2025a
-2. File → Open World
+2. **File → Open World**
 3. Navigate to `worlds/` and select a `.wbt` file
-4. Press the Play button
+4. Press the **Play (▶)** button
+
+---
+
+## Two Execution Modes
+
+### Mode 1 — GUI Mode (Demo / Debugging)
+
+```powershell
+python run_simulation.py
+python run_simulation.py --scenario event
+```
+
+**Use for:**
+- Demo to guide/supervisor
+- Debugging drone movement
+- Taking screenshots for paper (Webots → Tools → Screenshot → `experiments/screenshots/`)
+- Recording videos (`experiments/videos/`)
+
+**Result:** Full Webots window with 3D environment, UAVs, crowd, birds.
+
+---
+
+### Mode 2 — Headless Mode (Training / Research)
+
+```powershell
+python run_simulation.py --headless
+python run_simulation.py --scenario industrial --headless
+```
+
+**Use for:**
+- Faster metric collection
+- Reward tuning experiments
+- Batch runs across all scenarios
+- Future RL training
+
+**Result:** No GUI window. Same controllers, same world, same metrics in console.
+
+> **Same codebase. No duplicate logic. Only rendering changes.**
 
 ---
 
 ## Scenarios
 
-| Scenario | Buildings | Crowd | UAV Alt. | Description |
-|----------|-----------|-------|----------|-------------|
-| downtown | 15 | 15 | 15 m | Dense urban 3×3 road grid |
-| event | 5 | 40 | 12 m | Public event, central plaza |
-| residential | 8 | 8 | 10 m | Low-density with parks |
-| mixed | 14 | 35 | 15 m | Mixed commercial + residential |
-| industrial | 2 | 10 | 12 m | Port, containers, cranes |
+| Scenario | Buildings | Crowd | UAV Alt | Description |
+|----------|-----------|-------|---------|-------------|
+| `downtown` | 15 | 15 | 15 m | Dense urban 3×3 road grid |
+| `event` | 5 | 40 | 12 m | Public event, central plaza |
+| `residential` | 8 | 8 | 10 m | Low-density with parks |
+| `mixed` | 14 | 35 | 15 m | Mixed commercial + residential |
+| `industrial` | 2 | 10 | 12 m | Port, containers, cranes |
+
+All worlds use **ENU coordinates** (East=X, North=Y, Up=Z). UAVs patrol at Z = 10–15 m.
 
 ---
 
 ## Controllers
 
-### `uav_swarm_controller.py`
-Runs as a **Supervisor** Robot node. Every timestep:
-1. Computes circular patrol target for each UAV (staggered formation)
-2. Applies POMDP attention bias toward crowd centroid
-3. Moves all 5 UAVs and 5-8 birds via `setSFVec3f`
-4. Logs coverage % and UAV positions every 125 steps
+### `uav_swarm_controller` — Main Supervisor
 
-### `bird_controller.py`
-Runs per-bird (Bird PROTO has `supervisor TRUE`). Each bird:
-1. Orbits a slowly-drifting center point
-2. Maintains altitude between 4–12 m
-3. Uses unique per-bird parameters for flock variation
+Runs once per world. Controls ALL 5 UAVs via Supervisor API.
 
-### `crowd_controller.py`
-Runs as an optional second Supervisor. Manages `CrowdAgent` PROTO instances:
-- **WALK**: follows waypoint loop
-- **WAIT**: pauses randomly (10-15% chance at each waypoint)
-- **GATHER**: converges on a plaza point during steps 500-700
+1. Computes **circular patrol target** per UAV (staggered formation)
+2. Applies **POMDP attention bias** toward crowd centroid (α = 0.15)
+3. Moves UAVs via `setSFVec3f` (teleport — bypasses drone physics)
+4. Logs **coverage %** and UAV positions every 125 steps
 
-> The built-in Pedestrian controller (used by default in all worlds) provides
-> walking animation without this supervisor. Use `crowd_controller` with
-> `CrowdAgent.proto` for research-grade custom crowd models.
+### `uav_camera` — Per-Drone Camera Controller
 
----
+Runs on each Mavic2Pro drone:
+- Enables front camera
+- Sets propellers to `68.0 rad/s` (visual hover effect)
 
-## Custom PROTOs
+### `bird_controller` — Per-Bird Self-Supervisor
 
-### `Bird.proto`
-A simple flying bird with:
-- Box body (0.28 × 0.14 m) + wing panels
-- Physics: 0.18 kg mass
-- Self-supervising via hardcoded `supervisor TRUE`
-- Controller: `bird_controller`
+Each bird runs its own controller:
+- Unique Boids parameters per bird ID
+- Orbit center drifts slowly for realistic flock behavior
+- Altitude clamped: 4–12 m
 
-### `CrowdAgent.proto`
-A human-shaped agent:
-- Capsule body with head, torso, legs
-- Physics: 70 kg mass
-- Self-supervising via hardcoded `supervisor TRUE`
-- Controller: `crowd_controller`
+### `crowd_controller` — Optional CrowdAgent Supervisor
 
----
-
-## POMDP Framework
-
-The `uav_swarm_controller` implements a simplified POMDP:
-
-**State**: UAV positions + crowd centroid  
-**Observation**: Grid cells visible from current altitude  
-**Action**: Target position update (circular + attention bias)  
-**Reward proxy**: Coverage % logged every 125 steps
-
-Attention mechanism:
-```
-x_target = x_patrol * (1 - α) + x_crowd_centroid * α
-```
-where α = 0.15 (configurable in `environment_config.yaml`).
+State machine: **WALK → WAIT → GATHER**. Used with `CrowdAgent.proto`.
+Default worlds use the built-in Webots `pedestrian` controller instead.
 
 ---
 
 ## Configuration
 
-Edit `config/environment_config.yaml` to change:
-- `pomdp.attention_alpha` — crowd-centroid pull strength
-- `pomdp.coverage_cell_size` — grid cell size for coverage metric
-- `uav.patrol_altitude` — per-scenario UAV altitude
-- `birds.altitude_min/max` — bird flight band
+Edit `configs/environment_config.yaml` to change:
+
+```yaml
+pomdp:
+  attention_alpha: 0.15        # crowd-centroid pull strength (tune this)
+  coverage_cell_size: 5.0      # metres per grid cell
+  observation_radius: 12.0     # UAV sensor radius
+
+uav:
+  patrol_altitude: 15.0        # ENU Z in metres (per scenario)
+  patrol_radius: 20.0
+
+birds:
+  altitude_min: 4.0
+  altitude_max: 12.0
+```
+
+---
+
+## Team Workflow
+
+```
+Edit → GUI test → Headless metrics → Analyze → Paper
+```
+
+1. **Implement** changes in `controllers/`
+2. **Test visually** with `python run_simulation.py`
+3. **Collect metrics** with `python run_simulation.py --headless`
+4. **Save screenshots** to `experiments/screenshots/`
+5. **Document results** in `docs/current_status.md`
+
+### Adding a New Controller
+
+```
+controllers/
+└── my_controller/
+    └── my_controller.py      ← must match folder name
+```
+
+In `.wbt` file:
+```
+controller "my_controller"
+```
+
+### Adding a New World Scenario
+
+1. Create `worlds/new_scenario.wbt` in Webots
+2. Add to `SCENARIOS` in `run_simulation.py`
+3. Add to `configs/environment_config.yaml`
+4. Test: `python run_simulation.py --scenario new_scenario`
+
+---
+
+## POMDP Framework
+
+```
+State:      UAV positions (5×3) + crowd centroid (2)
+Obs:        Grid cells visible from current altitude
+Action:     Circular patrol + attention bias
+Reward:     Coverage % (logged; not yet used for learning)
+
+Attention: x_target = x_patrol × (1 - α) + x_crowd_centroid × α
+```
+
+Coverage metric: `|unique 5m grid cells covered| / 1296 total × 100%`
+
+---
+
+## RL Roadmap
+
+> **Status:** Architecture skeleton ready. Not yet training.
+
+```
+Phase 1 (current): Simulation baseline + paper metrics
+Phase 2 (next):    Implement UAVSwarmEnv IPC bridge + PPO
+Phase 3 (future):  MAPPO (multi-agent) + QMIX comparison
+```
+
+See `rl/algorithms/README.md` for algorithm comparison table.
 
 ---
 
@@ -169,18 +292,19 @@ Edit `config/environment_config.yaml` to change:
 
 | Problem | Fix |
 |---------|-----|
-| EXTERNPROTO download fails | Check internet connection; Webots downloads PROTOs on first use |
-| "DEF UAV_0 not found" in console | World file not open or DEF name mismatch |
-| Pedestrians not walking | Ensure controller is "pedestrian" and `controllerArgs` has `--trajectory` |
-| Birds fall to ground | Bird PROTO requires `supervisor TRUE` (already set in `Bird.proto`) |
-| Webots not found | Edit `WEBOTS_EXE` path in `run_simulation.py` |
-| Black screen / no background | TexturedBackground needs internet for first load |
+| `Webots not found` | Webots auto-detected in common paths. Use `--webots-exe` to override |
+| `DEF UAV_0 not found` | World file not open or DEF name mismatch in `.wbt` |
+| `Pedestrians not walking` | Controller must be `"pedestrian"` with `--trajectory` args |
+| `Birds fall to ground` | Bird PROTO requires `supervisor TRUE` (already set in `Bird.proto`) |
+| `Black screen / no background` | TexturedBackground needs internet on first Webots load |
+| `EXTERNPROTO download fails` | Check internet connection; Webots downloads PROTOs on first use |
 
 ---
 
 ## Research Notes
 
-- UAV motion is teleported via Supervisor API (bypasses drone physics for simulation speed)
-- To enable physics-based flight, replace `controller "void"` with a PID hover controller
-- The built-in Pedestrian PROTO provides motion-captured walking animations
-- Crowd density metrics are computed from `node.getPosition()` in the supervisor
+- UAV motion uses **Supervisor teleport** (`setSFVec3f`) — bypasses drone physics for speed
+- To enable physics-based flight: replace `controller "void"` with a PID hover controller
+- Pedestrian PROTO provides **motion-captured** walking animations
+- Crowd density metrics from `node.getPosition()` in supervisor
+- See `docs/architecture.md` for full system design
