@@ -55,13 +55,17 @@ class MultiUAVSurveillance:
         # Gather UAV node references
         self.uavs = []
         self.uav_trans = []
+        self.uav_rot = []
         for i in range(self.num_uavs):
             node = self.supervisor.getFromDef(f"UAV_{i}")
             if node is not None:
                 self.uavs.append(node)
                 self.uav_trans.append(node.getField("translation"))
+                self.uav_rot.append(node.getField("rotation"))
             else:
                 print(f"[WARN] DEF UAV_{i} not found")
+
+        self.prev_targets = [None] * self.num_uavs
 
         # Gather Bird node references (up to 8)
         self.birds = []
@@ -198,9 +202,19 @@ class MultiUAVSurveillance:
 
     def update_uavs(self):
         t = self.step_count
-        for i, tf in enumerate(self.uav_trans):
+        for i, (tf, rf) in enumerate(zip(self.uav_trans, self.uav_rot)):
             target = self._patrol_target(i, t)
             tf.setSFVec3f(target)
+            
+            # Orient the drone in the direction of movement
+            if self.prev_targets[i] is not None:
+                prev = self.prev_targets[i]
+                dx = target[0] - prev[0]
+                dy = target[1] - prev[1]
+                if math.hypot(dx, dy) > 1e-4:
+                    yaw = math.atan2(dy, dx)
+                    rf.setSFRotation([0.0, 0.0, 1.0, yaw])
+            self.prev_targets[i] = target
 
     # ── Bird flock (fallback if bird_controller not running) ──────────────────
 

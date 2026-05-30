@@ -107,8 +107,12 @@ while robot.step(timestep) != -1:
     if gyro and camera_roll_motor and camera_pitch_motor:
         gyro_vals = gyro.getValues()
         if gyro_vals:
-            camera_roll_motor.setPosition(-0.115 * gyro_vals[0])
-            camera_pitch_motor.setPosition(-0.1 * gyro_vals[1])
+            # Clamp roll and pitch target positions to joint limits [-0.49, 0.49] rad
+            # to prevent out-of-bounds warnings and stabilize camera view
+            roll_target = max(-0.49, min(0.49, -0.115 * gyro_vals[0]))
+            pitch_target = max(-0.49, min(0.49, -0.1 * gyro_vals[1]))
+            camera_roll_motor.setPosition(roll_target)
+            camera_pitch_motor.setPosition(pitch_target)
 
     # ── Periodic sensor log (for research metrics) ────────────────────────────
     # NOTE: Position truth comes from supervisor (getPosition()).
