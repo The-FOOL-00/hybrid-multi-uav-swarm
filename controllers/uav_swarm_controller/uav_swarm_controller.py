@@ -11,6 +11,7 @@ Camera modes (keyboard keys 1 / 2 / 3 in GUI mode):
 from controller import Supervisor
 import math
 import random
+import os
 
 
 # ── Camera mode presets ────────────────────────────────────────────────────────
@@ -80,6 +81,10 @@ class MultiUAVSurveillance:
         self.crowd_nodes = []
         self._collect_crowd()
 
+        # Gather building positions
+        self.building_nodes = []
+        self._collect_buildings()
+
         self.step_count = 0
         self.coverage_log = []
 
@@ -96,6 +101,35 @@ class MultiUAVSurveillance:
         print(f"[UAV Controller] UAVs={len(self.uavs)}, "
               f"Birds={len(self.birds)}, Crowd={len(self.crowd_nodes)}")
         self._print_camera_help()
+
+        # ── RL Integration Hook ────────────────────────────────────────────────
+        import sys
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+        if root_dir not in sys.path:
+            sys.path.append(root_dir)
+
+        self.rl_enabled = False
+        config_path = os.path.join(root_dir, "configs", "environment_config.yaml")
+        if os.path.isfile(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    for line in f:
+                        if "enabled:" in line and "true" in line.lower():
+                            self.rl_enabled = True
+                            break
+            except Exception as e:
+                print(f"[WARN] Failed to parse config file: {e}")
+
+        if self.rl_enabled:
+            print("[UAV Controller] RL mode is ENABLED. Loading Gym wrapper...")
+            try:
+                from rl.gym_wrapper.uav_swarm_env import UAVSwarmEnv
+                self.env = UAVSwarmEnv(self)
+                print("[UAV Controller] Gymnasium environment successfully initialized in-process.")
+            except Exception as e:
+                print(f"[ERROR] Failed to load Gymnasium environment: {e}")
+                self.rl_enabled = False
 
     # ── Camera control ─────────────────────────────────────────────────────────
 
@@ -162,6 +196,23 @@ class MultiUAVSurveillance:
                                  "crowd" in def_name.lower() or
                                  "worker" in def_name.lower()):
                     self.crowd_nodes.append(node)
+
+    def _collect_buildings(self):
+        """Find all Building-like nodes in the scene to measure proximity."""
+        root = self.supervisor.getRoot()
+        children = root.getField("children")
+        n = children.getCount()
+        for i in range(n):
+            node = children.getMFNode(i)
+            if node is None:
+                continue
+            type_name = node.getTypeName()
+            if type_name in ("SimpleBuilding", "CommercialBuilding", "ResidentialBuilding", "LargeResidentialTower", "Hotel", "RandomBuilding"):
+                self.building_nodes.append(node)
+            else:
+                def_name = node.getDef()
+                if def_name and any(kw in def_name.lower() for kw in ("building", "tower", "office", "hotel", "commercial")):
+                    self.building_nodes.append(node)
 
     # ── UAV patrol ─────────────────────────────────────────────────────────────
 
@@ -271,13 +322,38 @@ class MultiUAVSurveillance:
 
     def run(self):
         print("[UAV Controller] Surveillance system online.")
-        while self.supervisor.step(self.timestep) != -1:
-            self.step_count += 1
-            self._handle_keyboard()      # camera mode switching (GUI only)
-            self.update_uavs()
-            if self.birds:
-                self.update_birds()
-            self.log_metrics()
+        
+        if self.rl_enabled:
+            print("\n" + "=" * 58)
+            print("  NATIVE GYM TRAINING LOOP ACTIVE (Phase 1 Milestone)")
+            print("=" * 58)
+            obs, _ = self.env.reset()
+            step_count = 0
+            while True:
+                # Sample random continuous actions: 15 floats in [-1.0, 1.0]
+                import numpy as np
+                action = np.random.uniform(-1.0, 1.0, size=15).astype(np.float32)
+                
+                obs, reward, terminated, truncated, info = self.env.step(action)
+                step_count += 1
+                
+                if step_count % 100 == 0:
+                    print(f"  [Gym Step] {step_count:>4}/1000 completed successfully.")
+                    
+                if terminated or truncated:
+                    print(f"\n🎉 Milestone 1 Achieved: {step_count} steps completed without error!")
+                    print("Soft-resetting and restarting loop...")
+                    obs, _ = self.env.reset()
+                    step_count = 0
+        else:
+            # Rule-based baseline patrol
+            while self.supervisor.step(self.timestep) != -1:
+                self.step_count += 1
+                self._handle_keyboard()      # camera mode switching (GUI only)
+                self.update_uavs()
+                if self.birds:
+                    self.update_birds()
+                self.log_metrics()
 
 
 if __name__ == "__main__":

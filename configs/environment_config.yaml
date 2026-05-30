@@ -124,7 +124,7 @@ logging:
 
 # ── RL Training Parameters (future use) ─────────────────────────────────────
 rl:
-  enabled: false               # set true when RL training is active
+  enabled: true               # set true when RL training is active
   algorithm: "PPO"             # planned: PPO, MAPPO
   episodes: 1000
   max_steps_per_episode: 2000
