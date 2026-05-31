@@ -121,13 +121,21 @@ class UAVSwarmEnv:
         self._step_count = 0
         self.controller.prev_targets = [None] * self.NUM_UAVS
 
-        # Teleport all UAVs back to start
+        # Teleport all UAVs back to start and reset physics
         for i, (tf, rf) in enumerate(zip(self.controller.uav_trans, self.controller.uav_rot)):
             tf.setSFVec3f(self.initial_translations[i])
             rf.setSFRotation(self.initial_rotations[i])
+            try:
+                self.controller.uavs[i].resetPhysics()
+            except Exception:
+                pass
 
         # Step once to apply changes in the physics engine
         self.supervisor.step(self.timestep)
+        
+        # Read keyboard input immediately after step advances to refresh the queue
+        if hasattr(self.controller, '_handle_keyboard'):
+            self.controller._handle_keyboard()
 
         # Return initial observation and empty info dict
         obs = self._get_observation()
@@ -173,13 +181,33 @@ class UAVSwarmEnv:
             target = [new_x, new_y, new_z]
             tf.setSFVec3f(target)
             
-            # Orient the drone in the direction of displacement
+            # Orient the drone smoothly in the direction of displacement using a Low-Pass Filter
             if math.hypot(dx, dy) > 1e-4:
-                yaw = math.atan2(dy, dx)
-                rf.setSFRotation([0.0, 0.0, 1.0, yaw])
+                curr_rot = rf.getSFRotation()
+                curr_yaw = curr_rot[3]
+                target_yaw = math.atan2(dy, dx)
+                
+                # Compute shortest angular distance to prevent wild spins
+                diff = target_yaw - curr_yaw
+                diff = math.atan2(math.sin(diff), math.cos(diff))
+                
+                # Smooth interpolation (alpha = 0.1) to eliminate jitter/stutter
+                new_yaw = curr_yaw + 0.1 * diff
+                rf.setSFRotation([0.0, 0.0, 1.0, new_yaw])
+                
+            # Reset physics to completely zero out linear/angular momentum from teleportation
+            try:
+                self.controller.uavs[i].resetPhysics()
+            except Exception:
+                pass
                 
         # Advance simulation physics by exactly one timestep
         self.supervisor.step(self.timestep)
+        
+        # Read keyboard input immediately after step advances to refresh the queue
+        if hasattr(self.controller, '_handle_keyboard'):
+            self.controller._handle_keyboard()
+            
         self._step_count += 1
         
         # Check termination (Phase 1 milestone: 1,000 steps)

@@ -95,7 +95,9 @@ class MultiUAVSurveillance:
             self.keyboard = self.supervisor.getKeyboard()
             self.keyboard.enable(self.timestep)
             self._kb_available = True
-        except Exception:
+            print("[UAV Controller] Keyboard successfully enabled and listening.")
+        except Exception as e:
+            print(f"[WARN] Keyboard failed to enable: {e}")
             self._kb_available = False
 
         print(f"[UAV Controller] UAVs={len(self.uavs)}, "
@@ -160,8 +162,22 @@ class MultiUAVSurveillance:
         except Exception as e:
             print(f"[Camera] Could not switch mode: {e}")
 
+    def _change_focus(self, uav_name: str):
+        """Dynamically shift camera focus to a specific UAV (UAV_0 to UAV_4)."""
+        if self.viewpoint is None:
+            return
+        try:
+            self.viewpoint.getField("follow").setSFString(uav_name)
+            print(f"[Camera] Focus shifted to: {uav_name}")
+            
+            # Dynamically update camera mode presets so mode switches follow this UAV
+            _CAM_MODES[1]["follow"] = uav_name
+            _CAM_MODES[2]["follow"] = uav_name
+        except Exception as e:
+            print(f"[Camera] Could not shift focus to {uav_name}: {e}")
+
     def _handle_keyboard(self):
-        """Read keyboard and switch camera mode on 1/2/3 keys."""
+        """Read keyboard and switch camera mode (keys 1-3) or camera focus (keys 4-8)."""
         if not self._kb_available:
             return
         try:
@@ -173,6 +189,16 @@ class MultiUAVSurveillance:
                     self._set_camera_mode(2)
                 elif key == ord('3'):
                     self._set_camera_mode(3)
+                elif key == ord('4'):
+                    self._change_focus("UAV_0")
+                elif key == ord('5'):
+                    self._change_focus("UAV_1")
+                elif key == ord('6'):
+                    self._change_focus("UAV_2")
+                elif key == ord('7'):
+                    self._change_focus("UAV_3")
+                elif key == ord('8'):
+                    self._change_focus("UAV_4")
                 key = self.keyboard.getKey()
         except Exception:
             pass
@@ -327,9 +353,14 @@ class MultiUAVSurveillance:
             print("\n" + "=" * 58)
             print("  NATIVE GYM TRAINING LOOP ACTIVE (Phase 1 Milestone)")
             print("=" * 58)
+            # Force top-down static overview at startup to prevent follow-camera jitter during random actions!
+            self._set_camera_mode(3)
             obs, _ = self.env.reset()
             step_count = 0
             while True:
+                # Process keyboard inputs (keys 1-3 for camera modes, keys 4-8 for drone focus)
+                self._handle_keyboard()
+                
                 # Sample random continuous actions: 15 floats in [-1.0, 1.0]
                 import numpy as np
                 action = np.random.uniform(-1.0, 1.0, size=15).astype(np.float32)
@@ -339,6 +370,15 @@ class MultiUAVSurveillance:
                 
                 if step_count % 100 == 0:
                     print(f"  [Gym Step] {step_count:>4}/1000 completed successfully.")
+                    
+                    # Phase 2 Observation Space Audit (Print first 8 features for UAV_0)
+                    u0 = obs[:8]
+                    print(f"    [UAV_0 Observation Audit]:")
+                    print(f"      - Pos (x, y, z):  ({u0[0]:.2f}, {u0[1]:.2f}, {u0[2]:.2f})")
+                    print(f"      - Nearest UAV:     {u0[3]:.2f} (~{u0[3]*50:.1f}m)")
+                    print(f"      - Nearest Bldg:    {u0[4]:.2f} (~{u0[4]*50:.1f}m)")
+                    print(f"      - Crowd Vector:   ({u0[5]:.2f}, {u0[6]:.2f})")
+                    print(f"      - Grid Coverage:   {u0[7]:.2f} ({u0[7]*100:.1f}%)")
                     
                 if terminated or truncated:
                     print(f"\n🎉 Milestone 1 Achieved: {step_count} steps completed without error!")
