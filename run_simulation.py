@@ -28,6 +28,7 @@ SCENARIOS = {
     "residential": "worlds/residential.wbt",
     "mixed":       "worlds/mixed.wbt",
     "industrial":  "worlds/industrial.wbt",
+    "single_drone": "worlds/single_drone_downtown.wbt",
 }
 
 INFO = {
@@ -36,6 +37,7 @@ INFO = {
     "residential": {"buildings": 8,  "crowd": 8,   "uavs": 5, "birds": 6},
     "mixed":       {"buildings": 14, "crowd": 35,  "uavs": 5, "birds": 8},
     "industrial":  {"buildings": 2,  "crowd": 10,  "uavs": 5, "birds": 5},
+    "single_drone": {"buildings": 10, "crowd": 0,   "uavs": 1, "birds": 0},
 }
 
 SCENARIO_DESCRIPTIONS = {
@@ -44,6 +46,7 @@ SCENARIO_DESCRIPTIONS = {
     "residential": "Low-density neighborhood with parks, 8 houses",
     "mixed":       "Mixed commercial + residential zones, 35 agents",
     "industrial":  "Port/warehouse with containers and cranes, 10 workers",
+    "single_drone": "Isolated debug world for single drone navigation",
 }
 
 

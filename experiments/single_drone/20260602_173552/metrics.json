@@ -1,0 +1,464 @@
+{
+    "phase": "Phase 1 \u2014 Single Drone Navigation Baseline",
+    "world": "worlds/single_drone_downtown.wbt",
+    "start": [
+        -40.0,
+        15.0,
+        15.0
+    ],
+    "target": [
+        40.0,
+        -15.0,
+        15.0
+    ],
+    "target_altitude_m": 15.0,
+    "safety_radius_m": 10.0,
+    "reached_target": true,
+    "travel_time_s": 4.424,
+    "distance_travelled_m": 85.55,
+    "collision_count": 563,
+    "altitude_stability_std_m": 0.0,
+    "total_steps": 554,
+    "step_log": [
+        {
+            "step": 10,
+            "x": -37.87,
+            "y": 14.15,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 83.29
+        },
+        {
+            "step": 20,
+            "x": -36.56,
+            "y": 13.42,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 81.81
+        },
+        {
+            "step": 30,
+            "x": -35.22,
+            "y": 12.75,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 80.32
+        },
+        {
+            "step": 40,
+            "x": -33.84,
+            "y": 12.15,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 78.82
+        },
+        {
+            "step": 50,
+            "x": -32.44,
+            "y": 11.62,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 77.32
+        },
+        {
+            "step": 60,
+            "x": -31.01,
+            "y": 11.15,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 75.82
+        },
+        {
+            "step": 70,
+            "x": -29.6,
+            "y": 10.75,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 74.36
+        },
+        {
+            "step": 80,
+            "x": -28.14,
+            "y": 10.45,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 72.88
+        },
+        {
+            "step": 90,
+            "x": -26.69,
+            "y": 10.04,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 71.39
+        },
+        {
+            "step": 100,
+            "x": -25.27,
+            "y": 9.56,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 69.89
+        },
+        {
+            "step": 110,
+            "x": -23.88,
+            "y": 9.01,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 68.39
+        },
+        {
+            "step": 120,
+            "x": -22.52,
+            "y": 8.37,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 66.89
+        },
+        {
+            "step": 130,
+            "x": -21.19,
+            "y": 7.68,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 65.4
+        },
+        {
+            "step": 140,
+            "x": -19.89,
+            "y": 6.92,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 63.93
+        },
+        {
+            "step": 150,
+            "x": -18.41,
+            "y": 6.11,
+            "z": 15.0,
+            "state": "NAVIGATE",
+            "dist_to_target": 62.36
+        },
+        {
+            "step": 160,
+            "x": -16.06,
+            "y": 5.26,
+            "z": 15.0,
+            "state": "NAVIGATE",
+            "dist_to_target": 59.86
+        },
+        {
+            "step": 170,
+            "x": -14.22,
+            "y": 4.89,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 57.89
+        },
+        {
+            "step": 180,
+            "x": -12.72,
+            "y": 4.8,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 56.46
+        },
+        {
+            "step": 190,
+            "x": -11.23,
+            "y": 4.64,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 55.01
+        },
+        {
+            "step": 200,
+            "x": -9.75,
+            "y": 4.42,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 53.55
+        },
+        {
+            "step": 210,
+            "x": -8.28,
+            "y": 4.1,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 52.07
+        },
+        {
+            "step": 220,
+            "x": -6.84,
+            "y": 3.68,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 50.58
+        },
+        {
+            "step": 230,
+            "x": -5.44,
+            "y": 3.15,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 49.08
+        },
+        {
+            "step": 240,
+            "x": -4.08,
+            "y": 2.51,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 47.58
+        },
+        {
+            "step": 250,
+            "x": -2.77,
+            "y": 1.78,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 46.09
+        },
+        {
+            "step": 260,
+            "x": -1.5,
+            "y": 0.98,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 44.62
+        },
+        {
+            "step": 270,
+            "x": -0.28,
+            "y": 0.12,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 43.16
+        },
+        {
+            "step": 280,
+            "x": 0.93,
+            "y": -0.78,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 41.72
+        },
+        {
+            "step": 290,
+            "x": 2.11,
+            "y": -1.71,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 40.3
+        },
+        {
+            "step": 300,
+            "x": 3.47,
+            "y": -2.67,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 38.69
+        },
+        {
+            "step": 310,
+            "x": 4.61,
+            "y": -3.65,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 37.3
+        },
+        {
+            "step": 320,
+            "x": 5.78,
+            "y": -4.59,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 35.91
+        },
+        {
+            "step": 330,
+            "x": 6.98,
+            "y": -5.48,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 34.5
+        },
+        {
+            "step": 340,
+            "x": 8.23,
+            "y": -6.31,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 33.08
+        },
+        {
+            "step": 350,
+            "x": 9.55,
+            "y": -7.03,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 31.62
+        },
+        {
+            "step": 360,
+            "x": 10.94,
+            "y": -7.58,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 30.14
+        },
+        {
+            "step": 370,
+            "x": 12.41,
+            "y": -7.91,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 28.64
+        },
+        {
+            "step": 380,
+            "x": 13.9,
+            "y": -8.03,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 27.16
+        },
+        {
+            "step": 390,
+            "x": 15.4,
+            "y": -8.01,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 25.71
+        },
+        {
+            "step": 400,
+            "x": 16.9,
+            "y": -7.94,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 24.3
+        },
+        {
+            "step": 410,
+            "x": 18.4,
+            "y": -7.84,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 22.9
+        },
+        {
+            "step": 420,
+            "x": 19.85,
+            "y": -7.85,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 21.52
+        },
+        {
+            "step": 430,
+            "x": 21.24,
+            "y": -8.12,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 20.13
+        },
+        {
+            "step": 440,
+            "x": 22.37,
+            "y": -9.1,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 18.73
+        },
+        {
+            "step": 450,
+            "x": 23.55,
+            "y": -10.03,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 17.33
+        },
+        {
+            "step": 460,
+            "x": 24.77,
+            "y": -10.9,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 15.92
+        },
+        {
+            "step": 470,
+            "x": 26.05,
+            "y": -11.68,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 14.48
+        },
+        {
+            "step": 480,
+            "x": 27.4,
+            "y": -12.34,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 13.03
+        },
+        {
+            "step": 490,
+            "x": 28.81,
+            "y": -12.83,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 11.55
+        },
+        {
+            "step": 500,
+            "x": 30.29,
+            "y": -13.1,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 10.05
+        },
+        {
+            "step": 510,
+            "x": 31.78,
+            "y": -13.19,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 8.56
+        },
+        {
+            "step": 520,
+            "x": 33.28,
+            "y": -13.16,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 7.11
+        },
+        {
+            "step": 530,
+            "x": 34.78,
+            "y": -13.11,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 5.69
+        },
+        {
+            "step": 540,
+            "x": 36.28,
+            "y": -13.13,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 4.3
+        },
+        {
+            "step": 550,
+            "x": 37.51,
+            "y": -13.74,
+            "z": 15.0,
+            "state": "AVOID",
+            "dist_to_target": 2.92
+        }
+    ]
+}

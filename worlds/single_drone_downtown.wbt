@@ -1,0 +1,232 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Asphalt.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/SimpleBuilding.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  info [
+    "Single Drone Navigation Baseline — Phase 1"
+    "Route: Start(-40, 15, 15) → Target(40, -15, 15)"
+    "Isolated debug world — no swarm, no RL, no crowd, no birds"
+    "Open this file directly in Webots during development"
+  ]
+  title "Single Drone Navigation — Downtown Baseline"
+  gravity -9.806
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+DEF MAIN_VIEW Viewpoint {
+  orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
+  position -31.424563331667578 1.8130371151283213 495.04893137788855
+  near 0.5
+  follow "SOLO_DRONE"
+  followSmoothness 0.1
+}
+TexturedBackground {
+  texture "noon_cloudy_countryside"
+  luminosity 1.2
+}
+TexturedBackgroundLight {
+  castShadows FALSE
+}
+Floor {
+  size 200 200
+  tileSize 4 4
+  appearance Asphalt {
+  }
+}
+SimpleBuilding {
+  translation -8 -2 0
+  name "bldg_obs_a"
+  floorHeight 3.5
+  floorNumber 10
+  corners [
+    6 8
+    6 -8
+    -6 -8
+    -6 8
+  ]
+  wallType "glass highrise"
+}
+SimpleBuilding {
+  translation 12 -5 0
+  name "bldg_obs_b"
+  floorHeight 3.2
+  floorNumber 12
+  corners [
+    7 7
+    7 -7
+    -7 -7
+    -7 7
+  ]
+  wallType "transparent highrise"
+}
+SimpleBuilding {
+  translation 30 -10 0
+  name "bldg_obs_c"
+  floorNumber 8
+  corners [
+    6 8
+    6 -8
+    -6 -8
+    -6 8
+  ]
+  wallType "blue glass building"
+}
+SimpleBuilding {
+  translation -30 20 0
+  name "bldg_bg_1"
+  floorHeight 3.2
+  floorNumber 7
+  corners [
+    9 10
+    9 -10
+    -9 -10
+    -9 10
+  ]
+  wallType "old office building"
+}
+SimpleBuilding {
+  translation -15 22 0
+  name "bldg_bg_2"
+  floorHeight 3.5
+  floorNumber 6
+  corners [
+    8 8
+    8 -8
+    -8 -8
+    -8 8
+  ]
+  wallType "concrete building"
+}
+SimpleBuilding {
+  translation 8 18 0
+  name "bldg_bg_3"
+  floorNumber 9
+  corners [
+    7 9
+    7 -9
+    -7 -9
+    -7 9
+  ]
+  wallType "highrise"
+}
+SimpleBuilding {
+  translation -28 2 0
+  name "bldg_bg_4"
+  floorHeight 3.2
+  floorNumber 5
+  corners [
+    10 8
+    10 -8
+    -10 -8
+    -10 8
+  ]
+  wallType "brick building"
+}
+SimpleBuilding {
+  translation 25 8 0
+  name "bldg_bg_5"
+  floorHeight 3.5
+  floorNumber 7
+  corners [
+    8 10
+    8 -10
+    -8 -10
+    -8 10
+  ]
+  wallType "residential building"
+}
+SimpleBuilding {
+  translation -12 -20 0
+  name "bldg_bg_6"
+  floorNumber 6
+  corners [
+    9 8
+    9 -8
+    -9 -8
+    -9 8
+  ]
+  wallType "old building"
+}
+SimpleBuilding {
+  translation 22 -22 0
+  name "bldg_bg_7"
+  floorHeight 3.2
+  floorNumber 5
+  corners [
+    8 9
+    8 -9
+    -8 -9
+    -8 9
+  ]
+  wallType "concrete building"
+}
+DEF START_MARKER Solid {
+  translation -40 15 5
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.1 0.4 1
+          emissiveColor 0 0.2 0.9
+          shininess 0.8
+        }
+      }
+      geometry Box {
+        size 2 2 10
+      }
+    }
+  ]
+  name "start_marker"
+}
+DEF TARGET_MARKER Solid {
+  translation 40 -15 5
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.38 0
+          emissiveColor 0.9 0.22 0
+          shininess 0.9
+        }
+      }
+      geometry Box {
+        size 2 2 10
+      }
+    }
+  ]
+  name "target_marker"
+}
+DEF SOLO_DRONE Mavic2Pro {
+  hidden position_0_0 -1.3154045126247089e-09
+  hidden linearVelocity_0 -1.5227298538152423 0.9828433074879882 18.513689280369984
+  hidden angularVelocity_0 1.9144757650264141 -0.058742523485798455 0.1406459778144594
+  hidden position_5_0 -0.02157278833409485
+  hidden linearVelocity_5 -1.5171152914497488 0.9861006130395196 18.43862420228537
+  hidden angularVelocity_5 1.9144757670442858 -0.05874251247550851 0.14064597100653828
+  hidden rotation_6 0 -1 0 0.021572788334092825
+  hidden position_6_0 -0.21856606602722373
+  hidden linearVelocity_6 -1.5182645529241765 0.9818285981922855 18.452483713097582
+  hidden angularVelocity_6 1.9144757670444978 -0.05874251247390022 0.14064597100918078
+  hidden rotation_7 -0.9999999999999999 0 0 0.21856606602722467
+  hidden linearVelocity_7 -1.5199917299477756 0.9774246119264858 18.474154702414587
+  hidden angularVelocity_7 1.9144757670907628 -0.05874251248255222 0.140645971010827
+  translation -173.9672303252981 -16.01190783780908 2368.5310482515874
+  rotation -0.9860472484511695 0.10099435412724393 0.13232900005780365 -1.0506368302338318
+  name "SOLO_DRONE"
+  controller "uav_camera"
+  customData "uav_id=solo"
+}
+Robot {
+  name "single_drone_supervisor"
+  controller "single_drone_controller"
+  supervisor TRUE
+}
