@@ -36,7 +36,10 @@ _CAM_MODES = {
     3: {
         "label":       "Top-down overview",
         "position":    [0.0, 0.0, 130.0],
-        "orientation": [0.0, 0.0, 1.0, 0.0],  # identity = look along -Z = straight down
+        # NOTE: [0,0,1,0] is a degenerate axis-angle (zero angle) and causes Webots
+        # to render a black screen after clock drift. Use a near-identity rotation
+        # around a well-defined axis instead — visually identical but numerically safe.
+        "orientation": [0.0, 1.0, 0.0, 0.0001],  # ~0 rad around Y = looks straight down along -Z
         "follow":      "",
         "followType":  "None",
     },
@@ -98,6 +101,7 @@ class MultiUAVSurveillance:
         # ── Camera control ─────────────────────────────────────────────────────
         self.viewpoint = self.supervisor.getFromDef("MAIN_VIEW")
         self.cam_mode = 1
+        self._cam_health_counter = 0  # increments each step; triggers recovery check every 500 steps
         try:
             self.keyboard = self.supervisor.getKeyboard()
             self.keyboard.enable(self.timestep)
@@ -165,7 +169,7 @@ class MultiUAVSurveillance:
             self.viewpoint.getField("follow").setSFString(cfg["follow"])
             self.viewpoint.getField("followType").setSFString(cfg["followType"])
             self.cam_mode = mode
-            print(f"[Camera] Mode {mode}: {cfg['label']}")
+            print(f"[Camera] Mode {mode} activated — {cfg['label']}")
         except Exception as e:
             print(f"[Camera] Could not switch mode: {e}")
 
@@ -182,6 +186,51 @@ class MultiUAVSurveillance:
             _CAM_MODES[2]["follow"] = uav_name
         except Exception as e:
             print(f"[Camera] Could not shift focus to {uav_name}: {e}")
+
+    def _validate_and_recover_camera(self):
+        """
+        Periodic camera health check. Detects invalid/degenerate viewpoint state
+        (black-screen conditions) and automatically resets to a safe cinematic view.
+        Called every 500 simulation steps.
+        """
+        if self.viewpoint is None:
+            return
+        try:
+            pos = self.viewpoint.getField("position").getSFVec3f()
+            ori = self.viewpoint.getField("orientation").getSFRotation()
+
+            # Check 1: position outside the world bounds (±500m radius is generous)
+            pos_magnitude = math.sqrt(pos[0]**2 + pos[1]**2 + pos[2]**2)
+            if pos_magnitude > 500.0:
+                print(f"[Camera Recovery] Position out of bounds ({pos_magnitude:.1f}m) — "
+                      f"Resetting to cinematic view")
+                self._set_camera_mode(1)
+                return
+
+            # Check 2: degenerate orientation (near-zero angle = undefined rotation axis)
+            # ori = [ax, ay, az, angle]; if |angle| < 1e-6 and axis not normalized → degenerate
+            angle = abs(ori[3])
+            axis_len = math.sqrt(ori[0]**2 + ori[1]**2 + ori[2]**2)
+            if angle < 1e-6 and axis_len < 0.5:
+                print(f"[Camera Recovery] Degenerate orientation detected "
+                      f"(angle={angle:.2e}, axis_len={axis_len:.3f}) — "
+                      f"Resetting to cinematic view")
+                self._set_camera_mode(1)
+                return
+
+            # Check 3: altitude below ground (camera inside the terrain)
+            if pos[2] < 0.0:
+                print(f"[Camera Recovery] Camera below ground (Z={pos[2]:.1f}m) — "
+                      f"Resetting to cinematic view")
+                self._set_camera_mode(1)
+                return
+
+        except Exception as e:
+            print(f"[Camera Recovery] Health check failed ({e}) — Resetting to cinematic view")
+            try:
+                self._set_camera_mode(1)
+            except Exception:
+                pass
 
     def _handle_keyboard(self):
         """Read keyboard and switch camera mode (keys 1-3) or camera focus (keys 4-8)."""
@@ -480,8 +529,12 @@ class MultiUAVSurveillance:
             return
 
         if self.rl_enabled:
-            # Force top-down static overview at startup to prevent follow-camera jitter during training
-            self._set_camera_mode(3)
+            # Use cinematic view (mode 1) as default for RL training.
+            # Mode 3 top-down used to be forced here but had a degenerate [0,0,1,0]
+            # axis-angle orientation that caused black screens after long runs.
+            # Mode 1 uses proven-safe orientation [-0.16, 0.22, 0.96, 1.32].
+            # Press key 3 during runtime for top-down if needed.
+            self._set_camera_mode(1)
             
             # Load active PPO trainer in-process
             try:
@@ -496,7 +549,7 @@ class MultiUAVSurveillance:
                 trainer = Trainer(
                     scenario="downtown",
                     episodes=500,
-                    max_steps=1000,
+                    max_steps=5000,       # was 1000 → matched to UAVSwarmEnv.MAX_STEPS
                     headless=headless_run,  # Dynamically resolved from launch script env var
                     log_interval=10,
                     save_interval=50000,  # Save model checkpoints every 50k steps
@@ -522,6 +575,11 @@ class MultiUAVSurveillance:
                 if self.birds:
                     self.update_birds()
                 self.log_metrics()
+
+                # Periodic camera health check — recover from black-screen conditions
+                self._cam_health_counter += 1
+                if self._cam_health_counter % 500 == 0:
+                    self._validate_and_recover_camera()
 
 
 if __name__ == "__main__":

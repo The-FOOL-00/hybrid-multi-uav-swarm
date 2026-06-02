@@ -14,7 +14,12 @@ project:
 
 webots:
   version: "R2025a"
-  timestep: 8                  # ms
+  # Target timestep: 16ms (2× previous 8ms) for improved training efficiency.
+  # NOTE: Actual simulation timestep is set in each world's WorldInfo.basicTimeStep
+  # node inside the .wbt file — this YAML value is for documentation only.
+  # To apply 16ms: open each .wbt in Webots, set WorldInfo { basicTimeStep 16 },
+  # then verify simulation stability before committing.
+  timestep: 16                 # ms (target; currently 8ms in .wbt files)
   coordinate_system: "ENU"     # East=X, North=Y, Up=Z
   webots_exe: "C:/Program Files/Webots/webots.exe"
 
@@ -127,7 +132,10 @@ rl:
   enabled: true               # set true when RL training is active
   algorithm: "PPO"             # planned: PPO, MAPPO
   episodes: 1000
-  max_steps_per_episode: 2000
+  # Episode horizon increased from 1000 → 5000 steps for meaningful exploration.
+  # At 8ms/step: 5000 × 8ms = 40s real sim time per episode.
+  # At 16ms/step (target): 5000 × 16ms = 80s real sim time per episode.
+  max_steps_per_episode: 5000
   learning_rate: 3.0e-4
   gamma: 0.99
   reward_weights:
