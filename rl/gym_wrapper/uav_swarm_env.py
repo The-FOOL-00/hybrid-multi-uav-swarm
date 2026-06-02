@@ -60,7 +60,7 @@ import subprocess
 import numpy as np
 
 
-class UAVSwarmEnv:
+class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
     """
     Stub Gym environment for the Hybrid Multi-UAV Swarm simulation.
 
@@ -71,10 +71,10 @@ class UAVSwarmEnv:
 
     # ── Constants ─────────────────────────────────────────────────────────────
     NUM_UAVS = 5
-    ARENA_HALF = 90.0          # metres
+    ARENA_HALF = 55.0          # metres (strict city grid boundaries)
     ALT_MIN = 10.0
     ALT_MAX = 15.0
-    MAX_DELTA = 2.0            # metres per step
+    MAX_DELTA = 0.1            # metres per step (matching rule-based ~0.12m/step)
 
     SCENARIOS = ["downtown", "event", "residential", "mixed", "industrial"]
 
@@ -97,6 +97,19 @@ class UAVSwarmEnv:
             self.initial_translations.append(list(tf.getSFVec3f()))
             self.initial_rotations.append(list(rf.getSFRotation()))
 
+        # Cache building coordinates for fast building proximity calculations
+        self.building_positions = []
+        if hasattr(self.controller, 'building_nodes'):
+            for b_node in self.controller.building_nodes:
+                try:
+                    self.building_positions.append(list(b_node.getPosition()))
+                except Exception:
+                    pass
+
+        # Load composite reward function
+        from rl.rewards.reward_functions import CompositeReward
+        self.reward_fn = CompositeReward()
+
         # ── Observation space (flat, per-UAV concatenated) ────────────────
         # [x, y, z, nn_dist, obs_dist, crowd_dx, crowd_dy, coverage] × NUM_UAVS
         obs_dim = 8 * self.NUM_UAVS
@@ -113,11 +126,13 @@ class UAVSwarmEnv:
 
     # ── Core Gym Interface ─────────────────────────────────────────────────
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
         """
         Soft-resets all UAVs to their initial positions and orientations.
         Returns the initial observation and info dict.
         """
+        if GYM_AVAILABLE:
+            super().reset(seed=seed)
         self._step_count = 0
         self.controller.prev_targets = [None] * self.NUM_UAVS
 
@@ -161,7 +176,7 @@ class UAVSwarmEnv:
             # Get current 3D position
             curr_pos = tf.getSFVec3f()
             
-            # Map index to action slice
+            # Compute pure RL action delta displacement
             idx = i * 3
             dx = action[idx] * self.MAX_DELTA
             dy = action[idx + 1] * self.MAX_DELTA
@@ -210,14 +225,95 @@ class UAVSwarmEnv:
             
         self._step_count += 1
         
-        # Check termination (Phase 1 milestone: 1,000 steps)
-        terminated = self._step_count >= 1000
-        truncated = False
+        # Gather current position lists for reward calculations
+        uav_positions = []
+        for tf in self.controller.uav_trans:
+            uav_positions.append(list(tf.getSFVec3f()))
+            
+        crowd_positions = []
+        for node in self.controller.crowd_nodes:
+            try:
+                crowd_positions.append(list(node.getPosition()))
+            except Exception:
+                pass
+                
+        # 1. Collision Termination Check (severe collision < 3.0m)
+        is_collision = False
+        for i in range(self.NUM_UAVS):
+            for j in range(i + 1, self.NUM_UAVS):
+                d = math.sqrt(sum((pi - pj) ** 2 for pi, pj in zip(uav_positions[i], uav_positions[j])))
+                if d < 3.0:
+                    is_collision = True
+                    break
+            if is_collision:
+                break
+                
+        # 1.5 Building Collision Check (severe collision < 8.0m to building center)
+        is_building_collision = False
+        for pos in uav_positions:
+            for b_pos in self.building_positions:
+                d = math.hypot(pos[0] - b_pos[0], pos[1] - b_pos[1])
+                if d < 8.0:
+                    is_building_collision = True
+                    break
+            if is_building_collision:
+                break
+                
+        # 2. Boundary Breach Check (absolute displacement > 90m)
+        is_out_of_bounds = False
+        for pos in uav_positions:
+            if abs(pos[0]) > 90.0 or abs(pos[1]) > 90.0:
+                is_out_of_bounds = True
+                break
+                
+        # 3. Compute Composite Reward for the current step state
+        reward = self.reward_fn.compute(
+            uav_positions=uav_positions,
+            crowd_positions=crowd_positions,
+            step=self._step_count,
+            building_positions=self.building_positions
+        )
         
-        # Return outputs
+        # 4. Handle Proximity/Collision Penalties without early termination
+        # Drones never reset/teleport during flight; they slide off boundaries and obstacles,
+        # receive continuous negative rewards, and must learn to steer back into the safe zone.
+        terminated = False
+        if is_collision or is_building_collision:
+            reward += -50.0  # catastrophic proximity penalty
+            if self._step_count % 20 == 0:  # Rate-limit to prevent console clutter
+                print(f"\n💥 [Gym Safety Warning] Proximity violation detected! Steering back...")
+            
+        # 5. Horizon Truncation
+        truncated = self._step_count >= 1000
+        
+        # 6. Gather rich diagnostics for training logging
         obs = self._get_observation()
-        reward = 1.0
-        info = {}
+        
+        # Calculate current instantaneous coverage %
+        cov_percent = self.controller.compute_coverage()
+        
+        # Calculate Target Recognition Rate (TRR)
+        tracked = set()
+        if crowd_positions:
+            for ci, c_pos in enumerate(crowd_positions):
+                for u_pos in uav_positions:
+                    dist = math.hypot(u_pos[0] - c_pos[0], u_pos[1] - c_pos[1])
+                    view_r = u_pos[2] * 0.7
+                    if dist <= view_r:
+                        tracked.add(ci)
+                        break
+            trr = len(tracked) / len(crowd_positions) * 100.0
+        else:
+            trr = 0.0
+            
+        info = {
+            "step": self._step_count,
+            "coverage": cov_percent,
+            "trr": trr,
+            "is_collision": int(is_collision or is_building_collision),
+            "is_out_of_bounds": int(is_out_of_bounds),
+            "raw_reward": reward
+        }
         
         return obs, reward, terminated, truncated, info
 

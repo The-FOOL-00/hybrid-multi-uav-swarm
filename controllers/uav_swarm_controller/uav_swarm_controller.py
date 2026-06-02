@@ -50,7 +50,7 @@ class MultiUAVSurveillance:
         self.timestep = int(self.supervisor.getBasicTimeStep())
 
         self.num_uavs = 5
-        self.patrol_radius = 20.0
+        self.patrol_radius = 45.0
         self.patrol_altitude = 15.0  # Z in ENU
 
         # Gather UAV node references
@@ -67,6 +67,13 @@ class MultiUAVSurveillance:
                 print(f"[WARN] DEF UAV_{i} not found")
 
         self.prev_targets = [None] * self.num_uavs
+
+        # Capture starting translations and rotations for soft resets
+        self.initial_translations = []
+        self.initial_rotations = []
+        for tf, rf in zip(self.uav_trans, self.uav_rot):
+            self.initial_translations.append(list(tf.getSFVec3f()))
+            self.initial_rotations.append(list(rf.getSFRotation()))
 
         # Gather Bird node references (up to 8)
         self.birds = []
@@ -215,12 +222,11 @@ class MultiUAVSurveillance:
             if node is None:
                 continue
             type_name = node.getTypeName()
-            if type_name in ("Pedestrian", "CrowdAgent", "Robot"):
+            if type_name in ("Pedestrian", "CrowdAgent"):
+                self.crowd_nodes.append(node)
+            elif type_name == "Robot":
                 def_name = node.getDef()
-                if def_name and ("ped" in def_name.lower() or
-                                 "pedestrian" in def_name.lower() or
-                                 "crowd" in def_name.lower() or
-                                 "worker" in def_name.lower()):
+                if def_name and any(kw in def_name.lower() for kw in ("ped", "crowd", "worker", "agent")):
                     self.crowd_nodes.append(node)
 
     def _collect_buildings(self):
@@ -349,42 +355,164 @@ class MultiUAVSurveillance:
     def run(self):
         print("[UAV Controller] Surveillance system online.")
         
-        if self.rl_enabled:
+        # Check for benchmark run env var
+        run_benchmark = os.environ.get("RUN_BENCHMARK", "").lower() == "true"
+        
+        if run_benchmark:
             print("\n" + "=" * 58)
-            print("  NATIVE GYM TRAINING LOOP ACTIVE (Phase 1 Milestone)")
+            print("  RUNNING RULE-BASED BASELINE BENCHMARK")
             print("=" * 58)
-            # Force top-down static overview at startup to prevent follow-camera jitter during random actions!
+            
+            import numpy as np
+            import json
+            
+            num_episodes = 10
+            steps_per_episode = 1000
+            
+            episode_coverages = []
+            episode_trrs = []
+            episode_collisions = []
+            
+            # Determine project root path
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            root_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+            
+            for ep in range(num_episodes):
+                print(f"[Benchmark] Starting Episode {ep + 1}/{num_episodes}...")
+                
+                # Reset simulation positions (soft reset)
+                self.step_count = 0
+                self.prev_targets = [None] * self.num_uavs
+                for i, (tf, rf) in enumerate(zip(self.uav_trans, self.uav_rot)):
+                    tf.setSFVec3f(self.initial_translations[i])
+                    rf.setSFRotation(self.initial_rotations[i])
+                    try:
+                        self.uavs[i].resetPhysics()
+                    except Exception:
+                        pass
+                
+                # Step once to apply changes in the physics engine
+                self.supervisor.step(self.timestep)
+                
+                ep_covs = []
+                ep_trrs = []
+                ep_coll_events = 0
+                
+                for step in range(steps_per_episode):
+                    self.step_count += 1
+                    
+                    # Update UAVs and birds rule-based patrol
+                    self.update_uavs()
+                    if self.birds:
+                        self.update_birds()
+                    
+                    # Advance simulation
+                    if self.supervisor.step(self.timestep) == -1:
+                        break
+                        
+                    # Calculate coverage
+                    cov = self.compute_coverage()
+                    ep_covs.append(cov)
+                    
+                    # Calculate TRR
+                    uav_positions = [tf.getSFVec3f() for tf in self.uav_trans]
+                    crowd_positions = []
+                    for node in self.crowd_nodes:
+                        try:
+                            crowd_positions.append(node.getPosition())
+                        except Exception:
+                            pass
+                            
+                    tracked = set()
+                    for ci, c_pos in enumerate(crowd_positions):
+                        for u_pos in uav_positions:
+                            dist = math.hypot(u_pos[0] - c_pos[0], u_pos[1] - c_pos[1])
+                            view_r = u_pos[2] * 0.7
+                            if dist <= view_r:
+                                tracked.add(ci)
+                                break
+                    trr = len(tracked) / len(crowd_positions) if crowd_positions else 0.0
+                    ep_trrs.append(trr * 100.0)
+                    
+                    # Calculate safety violations (UAV-UAV collision threshold < 5m)
+                    for i in range(self.num_uavs):
+                        for j in range(i + 1, self.num_uavs):
+                            p_i = uav_positions[i]
+                            p_j = uav_positions[j]
+                            d = math.sqrt(sum((a - b) ** 2 for a, b in zip(p_i, p_j)))
+                            if d < 5.0:
+                                ep_coll_events += 1
+                
+                mean_ep_cov = np.mean(ep_covs)
+                mean_ep_trr = np.mean(ep_trrs)
+                print(f"  Episode {ep + 1} Done | Mean Coverage: {mean_ep_cov:.2f}% | Mean TRR: {mean_ep_trr:.2f}% | Near-Misses: {ep_coll_events}")
+                
+                episode_coverages.append(float(mean_ep_cov))
+                episode_trrs.append(float(mean_ep_trr))
+                episode_collisions.append(ep_coll_events)
+                
+            # Compile final metrics
+            final_metrics = {
+                "mean_coverage": float(np.mean(episode_coverages)),
+                "std_coverage": float(np.std(episode_coverages)),
+                "mean_trr": float(np.mean(episode_trrs)),
+                "std_trr": float(np.std(episode_trrs)),
+                "total_near_misses": int(np.sum(episode_collisions)),
+                "episode_coverages": episode_coverages,
+                "episode_trrs": episode_trrs,
+                "episode_near_misses": episode_collisions
+            }
+            
+            # Save final benchmark JSON
+            metrics_dir = os.path.join(root_dir, "experiments", "metrics")
+            os.makedirs(metrics_dir, exist_ok=True)
+            benchmark_path = os.path.join(metrics_dir, "baseline_benchmark.json")
+            with open(benchmark_path, "w") as f:
+                json.dump(final_metrics, f, indent=4)
+                
+            print(f"\n[Benchmark] Complete! Saved metrics to: {benchmark_path}")
+            print(f"  Final Mean Coverage: {final_metrics['mean_coverage']:.2f}% (std: {final_metrics['std_coverage']:.2f}%)")
+            print(f"  Final Mean TRR:      {final_metrics['mean_trr']:.2f}% (std: {final_metrics['std_trr']:.2f}%)")
+            print(f"  Total Near-Misses:   {final_metrics['total_near_misses']}")
+            
+            # Exit Webots supervisor gracefully
+            self.supervisor.simulationQuit(0)
+            return
+
+        if self.rl_enabled:
+            # Force top-down static overview at startup to prevent follow-camera jitter during training
             self._set_camera_mode(3)
-            obs, _ = self.env.reset()
-            step_count = 0
-            while True:
-                # Process keyboard inputs (keys 1-3 for camera modes, keys 4-8 for drone focus)
-                self._handle_keyboard()
+            
+            # Load active PPO trainer in-process
+            try:
+                from rl.training.trainer import Trainer
+                headless_run = os.environ.get("WEBOTS_HEADLESS", "false").lower() == "true"
                 
-                # Sample random continuous actions: 15 floats in [-1.0, 1.0]
-                import numpy as np
-                action = np.random.uniform(-1.0, 1.0, size=15).astype(np.float32)
+                # Resolve root directory path
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                root_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+                model_canonical_path = os.path.join(root_dir, "models", "ppo_swarm_final.zip")
                 
-                obs, reward, terminated, truncated, info = self.env.step(action)
-                step_count += 1
+                trainer = Trainer(
+                    scenario="downtown",
+                    episodes=500,
+                    max_steps=1000,
+                    headless=headless_run,  # Dynamically resolved from launch script env var
+                    log_interval=10,
+                    save_interval=50000,  # Save model checkpoints every 50k steps
+                    env=self.env
+                )
+                trainer.setup()
                 
-                if step_count % 100 == 0:
-                    print(f"  [Gym Step] {step_count:>4}/1000 completed successfully.")
-                    
-                    # Phase 2 Observation Space Audit (Print first 8 features for UAV_0)
-                    u0 = obs[:8]
-                    print(f"    [UAV_0 Observation Audit]:")
-                    print(f"      - Pos (x, y, z):  ({u0[0]:.2f}, {u0[1]:.2f}, {u0[2]:.2f})")
-                    print(f"      - Nearest UAV:     {u0[3]:.2f} (~{u0[3]*50:.1f}m)")
-                    print(f"      - Nearest Bldg:    {u0[4]:.2f} (~{u0[4]*50:.1f}m)")
-                    print(f"      - Crowd Vector:   ({u0[5]:.2f}, {u0[6]:.2f})")
-                    print(f"      - Grid Coverage:   {u0[7]:.2f} ({u0[7]*100:.1f}%)")
-                    
-                if terminated or truncated:
-                    print(f"\n🎉 Milestone 1 Achieved: {step_count} steps completed without error!")
-                    print("Soft-resetting and restarting loop...")
-                    obs, _ = self.env.reset()
-                    step_count = 0
+                # If a trained model is found and we are running in GUI mode, run demo mode!
+                if not headless_run and os.path.exists(model_canonical_path):
+                    trainer.evaluate(model_canonical_path)
+                else:
+                    # Otherwise, run PPO training
+                    trainer.run()
+            except Exception as e:
+                print(f"[ERROR] Trainer execution failed: {e}")
+                raise e
         else:
             # Rule-based baseline patrol
             while self.supervisor.step(self.timestep) != -1:

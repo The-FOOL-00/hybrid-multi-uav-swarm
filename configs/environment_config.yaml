@@ -26,7 +26,7 @@ scenarios:
     crowd_agents: 15
     uav_count: 5
     patrol_altitude: 15.0      # metres (ENU Z)
-    patrol_radius: 20.0
+    patrol_radius: 45.0
     birds: 8
     area_m2: 40000
 

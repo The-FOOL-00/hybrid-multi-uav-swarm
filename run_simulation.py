@@ -159,7 +159,12 @@ Examples:
     cmd.append(world_path)
 
     print(f"Launching: {' '.join(cmd)}\n")
-    subprocess.Popen(cmd)
+    
+    # Propagate headless status to supervisor controller via environment variables
+    env = os.environ.copy()
+    env["WEBOTS_HEADLESS"] = "true" if args.headless else "false"
+    
+    subprocess.Popen(cmd, env=env)
 
     if args.headless:
         print("Webots running in headless mode. Metrics will appear in console.")
