@@ -223,7 +223,13 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
         # Read keyboard input immediately after step advances to refresh the queue
         if hasattr(self.controller, '_handle_keyboard'):
             self.controller._handle_keyboard()
-            
+
+        # Periodic camera health check every 500 RL steps — prevents black-screen accumulation
+        self.controller._cam_health_counter += 1
+        if self.controller._cam_health_counter % 500 == 0:
+            if hasattr(self.controller, '_validate_and_recover_camera'):
+                self.controller._validate_and_recover_camera()
+
         self._step_count += 1
         
         # Gather current position lists for reward calculations

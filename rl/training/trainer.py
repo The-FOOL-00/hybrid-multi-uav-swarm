@@ -141,6 +141,10 @@ class SwarmTrainingCallback(BaseCallback):
             try:
                 with open(metrics_path, "w") as f:
                     json.dump(self.metrics_history, f, indent=4)
+                print(f"[Benchmark] Episode {self.episode_count} saved — "
+                      f"reward={record['reward']:.1f}, "
+                      f"coverage={record['coverage']:.2f}%, "
+                      f"duration={record['episode_duration_sec']:.1f}s")
             except Exception as e:
                 print(f"[WARN] Failed to write metrics JSON: {e}")
                 

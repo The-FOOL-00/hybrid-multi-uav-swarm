@@ -1,0 +1,13 @@
+[
+    {
+        "episode": 1,
+        "reward": 838.1212158203125,
+        "coverage": 4.089506172839506,
+        "trr": 26.666666666666668,
+        "is_collision": 0,
+        "is_out_of_bounds": 0,
+        "episode_duration_sec": 212.985,
+        "steps_per_sec": 23.48,
+        "timestamp": 1780394610.0726972
+    }
+]
