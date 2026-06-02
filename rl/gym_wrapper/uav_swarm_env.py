@@ -75,6 +75,7 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
     ALT_MIN = 10.0
     ALT_MAX = 15.0
     MAX_DELTA = 0.1            # metres per step (matching rule-based ~0.12m/step)
+    MAX_STEPS = 5000           # episode horizon (was 1000 → increased for meaningful exploration)
 
     SCENARIOS = ["downtown", "event", "residential", "mixed", "industrial"]
 
@@ -283,8 +284,8 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
             if self._step_count % 20 == 0:  # Rate-limit to prevent console clutter
                 print(f"\n💥 [Gym Safety Warning] Proximity violation detected! Steering back...")
             
-        # 5. Horizon Truncation
-        truncated = self._step_count >= 1000
+        # 5. Horizon Truncation — 5000 steps × ~8ms = ~40s real sim time per episode
+        truncated = self._step_count >= self.MAX_STEPS
         
         # 6. Gather rich diagnostics for training logging
         obs = self._get_observation()

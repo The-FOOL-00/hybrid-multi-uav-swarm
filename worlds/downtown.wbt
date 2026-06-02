@@ -1,7 +1,4 @@
 #VRML_SIM R2025a utf8
-# World 1: Downtown - Dense urban environment with grid roads
-# Coordinate system: ENU (East=X, North=Y, Up=Z)
-# UAVs at Z=15m altitude; pedestrians at Z=1.27m (center of model)
 
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
@@ -9,7 +6,6 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Asphalt.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/road/protos/Road.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/road/protos/RoadIntersection.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Pavement.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/SimpleBuilding.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/CommercialBuilding.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/ResidentialBuilding.proto"
@@ -20,7 +16,6 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/trees/protos/SimpleTree.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/traffic/protos/StreetLight.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/traffic/protos/CrossRoadsTrafficLight.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/traffic/protos/TrafficCone.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/street_furniture/protos/Bench.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/street_furniture/protos/BusStop.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/vehicles/protos/tesla/TeslaModel3Simple.proto"
@@ -35,186 +30,131 @@ WorldInfo {
     "Scenario: Downtown Dense Urban"
   ]
   title "Smart City UAV Surveillance - Downtown"
+  gravity -9.806
   basicTimeStep 8
   defaultDamping Damping {
     linear 0.5
     angular 0.5
   }
-  gravity -9.806
-  CFM 0.00001
-  ERP 0.2
 }
-
 DEF MAIN_VIEW Viewpoint {
-  orientation -0.16 0.22 0.96 1.32
+  orientation -0.16035316587566315 0.2204856030790368 0.9621189952539788 1.32
   position 80 -100 75
   near 0.5
   follow "UAV_0"
-  followType "Pan and Tilt Shot"
+  followType "None"
   followSmoothness 0.3
 }
-
 TexturedBackground {
   texture "noon_cloudy_countryside"
   luminosity 1.2
 }
-
 TexturedBackgroundLight {
   castShadows FALSE
 }
-
-# ── GROUND ───────────────────────────────────────────────
 Floor {
   size 200 200
   tileSize 4 4
   appearance Asphalt {
   }
 }
-
-# ── ROAD GRID 3×3 ─────────────────────────────────────────
-# East-West roads (extend along X, at Y=-40, 0, +40)
 Road {
   translation -90 -40 0.02
   name "road_ew_s"
-  wayPoints [ 0 0 0, 180 0 0 ]
-  width 7
-  numberOfLanes 2
-  rightBorder TRUE
-  leftBorder TRUE
-  appearance Asphalt {
-  }
-  pavementAppearance Pavement {
-  }
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
 }
 Road {
   translation -90 0 0.02
   name "road_ew_c"
-  wayPoints [ 0 0 0, 180 0 0 ]
-  width 7
-  numberOfLanes 2
-  rightBorder TRUE
-  leftBorder TRUE
-  appearance Asphalt {
-  }
-  pavementAppearance Pavement {
-  }
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
 }
 Road {
   translation -90 40 0.02
   name "road_ew_n"
-  wayPoints [ 0 0 0, 180 0 0 ]
-  width 7
-  numberOfLanes 2
-  rightBorder TRUE
-  leftBorder TRUE
-  appearance Asphalt {
-  }
-  pavementAppearance Pavement {
-  }
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
 }
-# North-South roads (extend along Y after 90° rotation, at X=-40, 0, +40)
 Road {
   translation -40 -90 0.02
   rotation 0 0 1 1.5708
   name "road_ns_w"
-  wayPoints [ 0 0 0, 180 0 0 ]
-  width 7
-  numberOfLanes 2
-  rightBorder TRUE
-  leftBorder TRUE
-  appearance Asphalt {
-  }
-  pavementAppearance Pavement {
-  }
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
 }
 Road {
   translation 0 -90 0.02
   rotation 0 0 1 1.5708
   name "road_ns_c"
-  wayPoints [ 0 0 0, 180 0 0 ]
-  width 7
-  numberOfLanes 2
-  rightBorder TRUE
-  leftBorder TRUE
-  appearance Asphalt {
-  }
-  pavementAppearance Pavement {
-  }
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
 }
 Road {
   translation 40 -90 0.02
   rotation 0 0 1 1.5708
   name "road_ns_e"
-  wayPoints [ 0 0 0, 180 0 0 ]
-  width 7
-  numberOfLanes 2
-  rightBorder TRUE
-  leftBorder TRUE
-  appearance Asphalt {
-  }
-  pavementAppearance Pavement {
-  }
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
 }
-
-# ── ROAD INTERSECTIONS ────────────────────────────────────
 RoadIntersection {
   translation -40 -40 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_sw"
+  startRoads FALSE
 }
 RoadIntersection {
   translation 0 -40 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_sc"
+  startRoads FALSE
 }
 RoadIntersection {
   translation 40 -40 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_se"
+  startRoads FALSE
 }
 RoadIntersection {
   translation -40 0 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_mw"
+  startRoads FALSE
 }
 RoadIntersection {
   translation 0 0 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_mc"
+  startRoads FALSE
 }
 RoadIntersection {
   translation 40 0 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_me"
+  startRoads FALSE
 }
 RoadIntersection {
   translation -40 40 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_nw"
+  startRoads FALSE
 }
 RoadIntersection {
   translation 0 40 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_nc"
+  startRoads FALSE
 }
 RoadIntersection {
   translation 40 40 0.02
-  roadsWidth 7
-  startRoads FALSE
   name "isect_ne"
+  startRoads FALSE
 }
-
-# ── TRAFFIC LIGHTS at key intersections ───────────────────
 CrossRoadsTrafficLight {
-  translation 0 0 0
   name "tl_center"
 }
 CrossRoadsTrafficLight {
@@ -225,51 +165,68 @@ CrossRoadsTrafficLight {
   translation 40 40 0
   name "tl_ne"
 }
-
-# ── BUILDINGS ─────────────────────────────────────────────
-# Block NE: X=20..38, Y=42..78  — tall commercial core
 SimpleBuilding {
   translation 24 58 0
   name "tower_a"
-  floorNumber 15
   floorHeight 3.2
-  corners [ 8 12, 8 -12, -8 -12, -8 12 ]
+  floorNumber 15
+  corners [
+    8 12
+    8 -12
+    -8 -12
+    -8 12
+  ]
   wallType "glass highrise"
 }
 SimpleBuilding {
   translation 36 48 0
   name "tower_b"
-  floorNumber 12
   floorHeight 3.2
-  corners [ 7 10, 7 -10, -7 -10, -7 10 ]
+  floorNumber 12
+  corners [
+    7 10
+    7 -10
+    -7 -10
+    -7 10
+  ]
   wallType "transparent highrise"
 }
 SimpleBuilding {
   translation 24 46 0
   name "tower_c"
-  floorNumber 10
   floorHeight 3.5
-  corners [ 6 8, 6 -8, -6 -8, -6 8 ]
+  floorNumber 10
+  corners [
+    6 8
+    6 -8
+    -6 -8
+    -6 8
+  ]
   wallType "blue glass building"
 }
-# Block NW: X=-38..-20, Y=42..78
 SimpleBuilding {
   translation -26 60 0
   name "office_nw1"
   floorNumber 8
-  floorHeight 3
-  corners [ 10 12, 10 -12, -10 -12, -10 12 ]
-  wallType "windowed building"
+  corners [
+    10 12
+    10 -12
+    -10 -12
+    -10 12
+  ]
 }
 SimpleBuilding {
   translation -36 48 0
   name "office_nw2"
   floorNumber 6
-  floorHeight 3
-  corners [ 8 8, 8 -8, -8 -8, -8 8 ]
+  corners [
+    8 8
+    8 -8
+    -8 -8
+    -8 8
+  ]
   wallType "old office building"
 }
-# Block SE: X=20..38, Y=-78..-42
 CommercialBuilding {
   translation 26 -58 0
   name "commercial_se"
@@ -278,11 +235,14 @@ SimpleBuilding {
   translation 36 -48 0
   name "office_se"
   floorNumber 7
-  floorHeight 3
-  corners [ 8 10, 8 -10, -8 -10, -8 10 ]
+  corners [
+    8 10
+    8 -10
+    -8 -10
+    -8 10
+  ]
   wallType "concrete building"
 }
-# Block SW: X=-38..-20, Y=-78..-42
 ResidentialBuilding {
   translation -26 -58 0
   name "residential_sw"
@@ -291,33 +251,41 @@ SimpleBuilding {
   translation -36 -48 0
   name "office_sw"
   floorNumber 5
-  floorHeight 3
-  corners [ 9 9, 9 -9, -9 -9, -9 9 ]
+  corners [
+    9 9
+    9 -9
+    -9 -9
+    -9 9
+  ]
   wallType "brick building"
 }
-# Block Center (outer): X=42..75, Y=-18..18
 Hotel {
   translation 60 0 0
   name "hotel_east"
 }
-# Block W outer: X=-75..-42, Y=-18..18
 SimpleBuilding {
   translation -60 10 0
   name "building_w1"
   floorNumber 4
-  floorHeight 3
-  corners [ 12 8, 12 -8, -12 -8, -12 8 ]
+  corners [
+    12 8
+    12 -8
+    -12 -8
+    -12 8
+  ]
   wallType "residential building"
 }
 SimpleBuilding {
   translation -62 -10 0
   name "building_w2"
-  floorNumber 3
-  floorHeight 3
-  corners [ 10 6, 10 -6, -10 -6, -10 6 ]
+  corners [
+    10 6
+    10 -6
+    -10 -6
+    -10 6
+  ]
   wallType "old building"
 }
-# Outer north
 RandomBuilding {
   translation 0 72 0
   name "random_n1"
@@ -330,13 +298,14 @@ SimpleBuilding {
   translation 22 72 0
   name "building_n2"
   floorNumber 9
-  floorHeight 3
-  corners [ 8 10, 8 -10, -8 -10, -8 10 ]
+  corners [
+    8 10
+    8 -10
+    -8 -10
+    -8 10
+  ]
   wallType "highrise"
 }
-
-# ── STREET LIGHTS ─────────────────────────────────────────
-# Along road Y=0 (E-W), spaced 15m
 StreetLight {
   translation -75 4 0
   name "sl_ew0_1"
@@ -369,7 +338,6 @@ StreetLight {
   translation 75 4 0
   name "sl_ew0_8"
 }
-# Along road X=0 (N-S)
 StreetLight {
   translation 4 -75 0
   rotation 0 0 1 1.5708
@@ -405,8 +373,6 @@ StreetLight {
   rotation 0 0 1 1.5708
   name "sl_ns0_7"
 }
-
-# ── STREET FURNITURE ──────────────────────────────────────
 Bench {
   translation -20 5 0
   name "bench_1"
@@ -425,8 +391,6 @@ BusStop {
   rotation 0 0 1 -1.5708
   name "bus_stop_2"
 }
-
-# ── TREES ─────────────────────────────────────────────────
 Pine {
   translation -45 -75 0
   name "pine_1"
@@ -475,8 +439,6 @@ SimpleTree {
   translation 45 60 0
   name "tree_e4"
 }
-
-# ── PARKED VEHICLES ───────────────────────────────────────
 TeslaModel3Simple {
   translation -70 -15 0.31
   rotation 0 0 1 1.5708
@@ -517,193 +479,829 @@ TeslaModel3Simple {
   rotation 0 0 1 -1.5708
   name "tesla_8"
 }
-
-# ── PEDESTRIANS (15) with built-in walking controller ─────
 Pedestrian {
-  translation -44 -70 1.27
+  hidden translation_2 0.032209654452457014 5.551115123125783e-17 0.004478181684729715
+  hidden rotation_2 0 -1 0 0.17112727272726483
+  hidden translation_3 -0.046101776170321615 2.7755575615628914e-17 0.00829938111487423
+  hidden rotation_3 0 -0.9999999999999999 0 0.48021818181817727
+  hidden translation_4 -0.08213822596970166 0 -0.0013497760038259088
+  hidden rotation_4 0 -1 0 0.22149090909090802
+  hidden translation_5 -0.06024860083794047 0 0.006492294129567033
+  hidden rotation_5 0 1 0 0.3198545454545326
+  hidden translation_6 -0.04878720120085258 5.551115123125783e-17 0.008095795501416564
+  hidden rotation_6 0 -1 0 0.5075636363636269
+  hidden translation_7 0.02844470650428174 -5.551115123125783e-17 -0.0038036466366909716
+  hidden rotation_7 0 1 0 0.07723636363636398
+  hidden translation_8 0.05801248374537938 2.7755575615628914e-17 -0.013654835853542435
+  hidden rotation_8 0 1 0 0.19723636363636177
+  hidden translation_9 0.06826855818413755 2.7755575615628914e-17 -0.0057829951052478235
+  hidden rotation_9 0 1 0 0.09010909090909024
+  hidden translation_10 0.23631028207518354 0 -0.04343798268499044
+  hidden rotation_10 0 0.9999999999999999 0 0.2059636363636305
+  hidden translation_11 -0.2778476581243051 -2.7755575615628914e-17 -0.11284099934872582
+  hidden rotation_11 0 -1 0 1.0366545454545406
+  hidden translation_12 0.7239421778245514 0 -0.8603553311846082
+  hidden rotation_12 0 1 0 1.6636727272727252
+  hidden translation_13 -0.023444112698493363 0 0.0016143708682414548
+  hidden rotation_13 0 -1 0 0.0201090909090918
+  hidden translation_14 -0.011859731835127065 0 0.0005109580459842777
+  hidden rotation_14 0 1 0 0.03207272727272374
+  translation -44 62.67840000000001 1.335745454545454
+  rotation 0 0 1 -1.5707963267948966
   name "ped_0"
-  controllerArgs [ "--trajectory=-44 -70, -44 70" "--speed=1.2" ]
+  controllerArgs [
+    "--trajectory=-44 -70, -44 70"
+    "--speed=1.2"
+  ]
   shirtColor 0.8 0.2 0.2
+  rightLegAngle -1.0366545454545404
+  rightLowerLegAngle 1.6636727272727252
+  rightFootAngle -0.020109090909088537
+  leftLegAngle 0.1972363636363616
+  leftLowerLegAngle 0.09010909090908854
+  leftFootAngle 0.20596363636363094
+  rightArmAngle 0.31985454545453307
+  rightLowerArmAngle -0.5075636363636272
+  rightHandAngle 0.0772363636363616
+  leftArmAngle -0.17112727272726372
+  leftLowerArmAngle -0.48021818181817705
+  leftHandAngle -0.22149090909090774
+  headAngle 0.0320727272727288
 }
 Pedestrian {
-  translation -36 -65 1.27
+  hidden translation_2 -0.0070386992245867995 5.551115123125783e-17 -0.0002399292938197184
+  hidden rotation_2 0 1 0 0.03701818181824402
+  hidden translation_3 -0.03527733588063911 0 0.008375283702847347
+  hidden rotation_3 0 -1 0 0.3702545454545134
+  hidden translation_4 -0.0705345483912377 0 -5.0955034844257785e-05
+  hidden rotation_4 0 -1 0 0.19007272727271735
+  hidden translation_5 -0.006305434584400011 0 -0.00022710160855063388
+  hidden rotation_5 0 1 0 0.033163636363552115
+  hidden translation_6 -0.027942484606725233 0 0.007747717735714643
+  hidden rotation_6 0 -1 0 0.2954909090908476
+  hidden translation_7 0.011122816927658666 0 -0.0012213594055945354
+  hidden rotation_7 0 0.9999999999999999 0 0.030109090909074484
+  hidden translation_8 0.04441399004440858 5.551115123125783e-17 -0.009355408987570424
+  hidden rotation_8 0 1 0 0.1501090909090785
+  hidden translation_9 0.026672730340746187 2.7755575615628914e-17 -0.0015224448701696147
+  hidden rotation_9 0 1 0 0.03512727272726071
+  hidden translation_10 0.09314205398153416 2.7755575615628914e-17 -0.011131974683630474
+  hidden rotation_10 0 1 0 0.08029090909087427
+  hidden translation_11 -0.25503709017947945 0 -0.08702335844712356
+  hidden rotation_11 0 -0.9999999999999999 0 0.9227636363636033
+  hidden translation_12 0.7280811612618839 0 -0.8217491128667734
+  hidden rotation_12 0 0.9999999999999999 0 1.612618181818167
+  hidden translation_13 0.04056255810680409 -2.7755575615628914e-17 -0.003915951281656893
+  hidden rotation_13 0 1 0 0.034872727272746866
+  hidden translation_14 -0.024903117607960663 0 0.0015142168532891187
+  hidden rotation_14 0 1 0 0.06741818181819312
+  translation -36 23.124800000000015 1.320036363636359
+  rotation 0 0 1 -1.5707963267948966
   name "ped_1"
-  controllerArgs [ "--trajectory=-36 -65, -36 65" "--speed=1.4" ]
+  controllerArgs [
+    "--trajectory=-36 -65, -36 65"
+    "--speed=1.4"
+  ]
   shirtColor 0.2 0.7 0.3
+  rightLegAngle -0.9227636363636031
+  rightLowerLegAngle 1.612618181818167
+  rightFootAngle 0.034872727272743306
+  leftLegAngle 0.15010909090907715
+  leftLowerLegAngle 0.0351272727272567
+  leftFootAngle 0.08029090909087244
+  rightArmAngle 0.03316363636355277
+  rightLowerArmAngle -0.29549090909084724
+  rightHandAngle 0.030109090909077166
+  leftArmAngle 0.037018181818242527
+  leftLowerArmAngle -0.3702545454545134
+  leftHandAngle -0.19007272727271812
+  headAngle 0.06741818181819212
 }
 Pedestrian {
-  translation 4 -70 1.27
+  hidden translation_2 0.05125419783697923 5.551115123125783e-17 0.0098669290570213
+  hidden rotation_2 0 -1 0 0.27520000000001743
+  hidden translation_3 -0.051494511711606246 -5.551115123125783e-17 0.007815521265859188
+  hidden rotation_3 0 -1 0 0.5352000000000086
+  hidden translation_4 -0.08792333150804688 2.7755575615628914e-17 -0.002135730218210341
+  hidden rotation_4 0 -1 0 0.23720000000000302
+  hidden translation_5 -0.08594823465757791 0 0.015552685167132818
+  hidden rotation_5 0 1 0 0.4632000000000234
+  hidden translation_6 -0.059120087172050396 -5.551115123125783e-17 0.006614813908288358
+  hidden rotation_6 0 -1 0 0.6136000000000175
+  hidden translation_7 0.03705521284587551 -2.7755575615628914e-17 -0.00540015592195392
+  hidden rotation_7 0 1 0 0.10080000000000462
+  hidden translation_8 0.06473198347161938 2.7755575615628914e-17 -0.0160436448358649
+  hidden rotation_8 0 1 0 0.22080000000000422
+  hidden translation_9 0.08896292686791953 2.7755575615628914e-17 -0.00876912867546642
+  hidden rotation_9 0 1 0 0.1176000000000051
+  hidden translation_10 0.30609085438747075 0 -0.06626769791133658
+  hidden rotation_10 0 1 0 0.26880000000001
+  hidden translation_11 -0.28811421305229784 2.7755575615628914e-17 -0.12668139949376755
+  hidden rotation_11 0 -1 0 1.093600000000009
+  hidden translation_12 0.7211350214116274 -2.7755575615628914e-17 -0.8795666325065398
+  hidden rotation_12 0 1 0 1.689200000000004
+  hidden translation_13 -0.055537266745481706 0 0.0030579904626353294
+  hidden rotation_13 0 -1 0 0.04760000000000534
+  hidden translation_14 -0.005326779084143829 0 0.00018235596052773584
+  hidden rotation_14 0 1 0 0.014400000000003174
+  translation 4 65.04480000000001 1.3436000000000012
+  rotation 0 0 1 1.5707963267948966
   name "ped_2"
-  controllerArgs [ "--trajectory=4 -70, 4 70" "--speed=1.1" ]
+  controllerArgs [
+    "--trajectory=4 -70, 4 70"
+    "--speed=1.1"
+  ]
   shirtColor 0.3 0.3 0.8
+  rightLegAngle -1.0936000000000092
+  rightLowerLegAngle 1.689200000000004
+  rightFootAngle -0.04760000000000446
+  leftLegAngle 0.22080000000000383
+  leftLowerLegAngle 0.11760000000000446
+  leftFootAngle 0.2688000000000102
+  rightArmAngle 0.4632000000000232
+  rightLowerArmAngle -0.6136000000000172
+  rightHandAngle 0.10080000000000382
+  leftArmAngle -0.2752000000000169
+  leftLowerArmAngle -0.5352000000000089
+  leftHandAngle -0.23720000000000255
+  headAngle 0.014399999999997134
 }
 Pedestrian {
-  translation -4 -65 1.27
+  hidden translation_2 0.012708345202833283 0 0.0010970326909898465
+  hidden rotation_2 0 -1 0 0.06705454545450827
+  hidden translation_3 -0.04069059960396131 2.7755575615628914e-17 0.008486156754068774
+  hidden rotation_3 0 -1 0 0.42523636363634537
+  hidden translation_4 -0.07634148810953792 -5.551115123125783e-17 -0.0006547937756752331
+  hidden rotation_4 0 -1 0 0.20578181818181235
+  hidden translation_5 -0.03351822959530526 0 0.0011961523784472794
+  hidden rotation_5 0 1 0 0.17650909090904307
+  hidden translation_6 -0.03835560702323518 -2.7755575615628914e-17 0.008474849437498336
+  hidden rotation_6 0 -1 0 0.4015272727272374
+  hidden translation_7 0.019798974439200714 -2.7755575615628914e-17 -0.0024104566225913726
+  hidden rotation_7 0 0.9999999999999999 0 0.053672727272722175
+  hidden translation_8 0.05123856559968495 0 -0.011425011223578141
+  hidden rotation_8 0 1 0 0.17367272727271932
+  hidden translation_9 0.04749992770650967 2.7755575615628914e-17 -0.003366825201613577
+  hidden rotation_9 0 1 0 0.06261818181817358
+  hidden translation_10 0.16523383309504833 -2.7755575615628914e-17 -0.0250351956699586
+  hidden rotation_10 0 0.9999999999999999 0 0.14312727272725048
+  hidden translation_11 -0.26681002283183297 0 -0.09960735157440676
+  hidden rotation_11 0 -1 0 0.9797090909090717
+  hidden translation_12 0.7262580607892549 0 -0.8410786376999236
+  hidden rotation_12 0 1 0 1.638145454545446
+  hidden translation_13 0.008597233493940232 0 -0.0007108621079701116
+  hidden rotation_13 0 1 0 0.007381818181815319
+  hidden translation_14 -0.01838585741673606 0 0.0009549578998294117
+  hidden rotation_14 0 1 0 0.049745454545463155
+  translation -4 35.4016 1.3278909090909066
+  rotation 0 0 1 -1.5707963267948966
   name "ped_3"
-  controllerArgs [ "--trajectory=-4 -65, -4 65" "--speed=1.3" ]
+  controllerArgs [
+    "--trajectory=-4 -65, -4 65"
+    "--speed=1.3"
+  ]
   shirtColor 0.9 0.6 0.1
+  rightLegAngle -0.9797090909090718
+  rightLowerLegAngle 1.638145454545446
+  rightFootAngle 0.007381818181827385
+  leftLegAngle 0.17367272727271937
+  leftLowerLegAngle 0.06261818181817262
+  leftFootAngle 0.1431272727272517
+  rightArmAngle 0.17650909090904293
+  rightLowerArmAngle -0.4015272727272372
+  rightHandAngle 0.053672727272719385
+  leftArmAngle -0.06705454545451062
+  leftLowerArmAngle -0.4252363636363452
+  leftHandAngle -0.20578181818181293
+  headAngle 0.049745454545460456
 }
 Pedestrian {
-  translation 36 -70 1.27
+  hidden translation_2 0.06869218911413837 -5.551115123125783e-17 0.016773156316855165
+  hidden rotation_2 0 -1 0 0.37381818181816895
+  hidden translation_3 -0.05455443519131426 0 0.007407229794619635
+  hidden rotation_3 0 -1 0 0.5665454545454667
+  hidden translation_4 -0.08928740635623703 0 -0.0023345576327402084
+  hidden rotation_4 0 -1 0 0.24090909090909837
+  hidden translation_5 -0.1064764248688509 0 0.026011282569424976
+  hidden rotation_5 0 0.9999999999999999 0 0.584363636363632
+  hidden translation_6 -0.06628322271642399 -5.551115123125783e-17 0.004916764607938731
+  hidden rotation_6 0 -1 0 0.6883636363636473
+  hidden translation_7 0.04509791723822264 0 -0.007082208132339118
+  hidden rotation_7 0 0.9999999999999999 0 0.12290909090908883
+  hidden translation_8 0.07180253947445442 2.7755575615628914e-17 -0.01875243615799438
+  hidden rotation_8 0 1 0 0.2458181818181771
+  hidden translation_9 0.10902359299625933 0 -0.012221663465428745
+  hidden rotation_9 0 1 0 0.1443636363636321
+  hidden translation_10 0.34648190787445765 0 -0.08175366768828818
+  hidden rotation_10 0 1 0 0.30581818181819487
+  hidden translation_11 -0.29326764720995646 -5.551115123125783e-17 -0.1343029907429437
+  hidden rotation_11 0 -1 0 1.1240000000000139
+  hidden translation_12 0.7237436630233843 0 -0.8618356050312994
+  hidden rotation_12 0 0.9999999999999999 0 1.6656363636364038
+  hidden translation_13 -0.09403229369495542 -2.7755575615628914e-17 0.0036252050090042065
+  hidden rotation_13 0 -1 0 0.08054545454544634
+  hidden translation_14 -0.001210853375615096 0 3.470870013982941e-05
+  hidden rotation_14 0 1 0 0.0032727272727822426
+  translation 36 52.768 1.3460000000000036
+  rotation 0 0 1 1.5707963267948966
   name "ped_4"
-  controllerArgs [ "--trajectory=36 -70, 36 70" "--speed=1.0" ]
+  controllerArgs [
+    "--trajectory=36 -70, 36 70"
+    "--speed=1.0"
+  ]
   shirtColor 0.6 0.2 0.8
+  rightLegAngle -1.1240000000000145
+  rightLowerLegAngle 1.6656363636364038
+  rightFootAngle -0.08054545454544497
+  leftLegAngle 0.24581818181817652
+  leftLowerLegAngle 0.14436363636363242
+  leftFootAngle 0.3058181818181947
+  rightArmAngle 0.5843636363636323
+  rightLowerArmAngle -0.688363636363647
+  rightHandAngle 0.12290909090908826
+  leftArmAngle -0.3738181818181693
+  leftLowerArmAngle -0.5665454545454667
+  leftHandAngle -0.24090909090909918
+  headAngle 0.0032727272727242963
 }
 Pedestrian {
-  translation 44 -65 1.27
+  hidden translation_2 -0.026817788953670006 0 0.00048176347720566004
+  hidden rotation_2 0 1 0 0.14109090909093563
+  hidden translation_3 -0.029878345176358748 2.7755575615628914e-17 0.007967097046054486
+  hidden rotation_3 0 -1 0 0.31527272727271366
+  hidden translation_4 -0.06471883979600371 0 0.0004615912091015528
+  hidden rotation_4 0 -1 0 0.17436363636363217
+  hidden translation_5 0.02083157469769186 -5.551115123125783e-17 0.0022517270341465
+  hidden rotation_5 0 -1 0 0.1101818181818551
+  hidden translation_6 -0.017664806422251707 -5.551115123125783e-17 0.005922568396829878
+  hidden rotation_6 0 -1 0 0.18945454545451965
+  hidden translation_7 0.0024210511394809967 5.551115123125783e-17 -0.00023701519538710247
+  hidden rotation_7 0 1 0 0.006545454545415503
+  hidden translation_8 0.0375425462153968 -2.7755575615628914e-17 -0.007447178228558005
+  hidden rotation_8 0 1 0 0.1265454545454469
+  hidden translation_9 0.005802705251712614 2.7755575615628914e-17 -0.00025124791372055366
+  hidden rotation_9 0 1 0 0.007636363636377024
+  hidden translation_10 0.020319498888474938 0 -0.0017831972631061621
+  hidden rotation_10 0 1 0 0.017454545454535012
+  hidden translation_11 -0.24256702693867266 -2.7755575615628914e-17 -0.07512981612221897
+  hidden rotation_11 0 -1 0 0.8658181818181676
+  hidden translation_12 0.7294102912987438 -2.7755575615628914e-17 -0.8023793519246927
+  hidden rotation_12 0 1 0 1.5870909090909027
+  hidden translation_13 0.0724277048647616 -2.7755575615628914e-17 -0.007998474558954527
+  hidden rotation_13 0 1 0 0.06236363636364488
+  hidden translation_14 -0.03140947695660048 0 0.00218856024019487
+  hidden rotation_14 0 0.9999999999999999 0 0.08509090909091291
+  translation 44 10.848000000000013 1.3121818181818161
+  rotation 0 0 1 -1.5707963267948966
   name "ped_5"
-  controllerArgs [ "--trajectory=44 -65, 44 65" "--speed=1.5" ]
+  controllerArgs [
+    "--trajectory=44 -65, 44 65"
+    "--speed=1.5"
+  ]
   shirtColor 0.2 0.6 0.8
+  rightLegAngle -0.8658181818181674
+  rightLowerLegAngle 1.5870909090909027
+  rightFootAngle 0.06236363636364331
+  leftLegAngle 0.12654545454544858
+  leftLowerLegAngle 0.0076363636363566915
+  leftFootAngle 0.01745454545452958
+  rightArmAngle -0.1101818181818544
+  rightLowerArmAngle -0.18945454545451867
+  rightHandAngle 0.006545454545448593
+  leftArmAngle 0.1410909090909354
+  leftLowerArmAngle -0.3152727272727134
+  leftHandAngle -0.17436363636363242
+  headAngle 0.08509090909091355
 }
 Pedestrian {
-  translation -70 -36 1.27
+  hidden translation_2 0.032209654452457014 5.551115123125783e-17 0.004478181684729715
+  hidden rotation_2 0 -1 0 0.17112727272726483
+  hidden translation_3 -0.046101776170321615 2.7755575615628914e-17 0.00829938111487423
+  hidden rotation_3 0 -0.9999999999999999 0 0.48021818181817727
+  hidden translation_4 -0.08213822596970166 0 -0.0013497760038259088
+  hidden rotation_4 0 -1 0 0.22149090909090802
+  hidden translation_5 -0.06024860083794047 0 0.006492294129567033
+  hidden rotation_5 0 1 0 0.3198545454545326
+  hidden translation_6 -0.04878720120085258 5.551115123125783e-17 0.008095795501416564
+  hidden rotation_6 0 -1 0 0.5075636363636269
+  hidden translation_7 0.02844470650428174 -5.551115123125783e-17 -0.0038036466366909716
+  hidden rotation_7 0 1 0 0.07723636363636398
+  hidden translation_8 0.05801248374537938 2.7755575615628914e-17 -0.013654835853542435
+  hidden rotation_8 0 1 0 0.19723636363636177
+  hidden translation_9 0.06826855818413755 2.7755575615628914e-17 -0.0057829951052478235
+  hidden rotation_9 0 1 0 0.09010909090909024
+  hidden translation_10 0.23631028207518354 0 -0.04343798268499044
+  hidden rotation_10 0 0.9999999999999999 0 0.2059636363636305
+  hidden translation_11 -0.2778476581243051 -2.7755575615628914e-17 -0.11284099934872582
+  hidden rotation_11 0 -1 0 1.0366545454545406
+  hidden translation_12 0.7239421778245514 0 -0.8603553311846082
+  hidden rotation_12 0 1 0 1.6636727272727252
+  hidden translation_13 -0.023444112698493363 0 0.0016143708682414548
+  hidden rotation_13 0 -1 0 0.0201090909090918
+  hidden translation_14 -0.011859731835127065 0 0.0005109580459842777
+  hidden rotation_14 0 1 0 0.03207272727272374
+  translation 62.67840000000001 -36 1.335745454545454
+  rotation 0 0 1 3.141592653589793
   name "ped_6"
-  controllerArgs [ "--trajectory=-70 -36, 70 -36" "--speed=1.2" ]
+  controllerArgs [
+    "--trajectory=-70 -36, 70 -36"
+    "--speed=1.2"
+  ]
   shirtColor 0.8 0.5 0.2
+  rightLegAngle -1.0366545454545404
+  rightLowerLegAngle 1.6636727272727252
+  rightFootAngle -0.020109090909088537
+  leftLegAngle 0.1972363636363616
+  leftLowerLegAngle 0.09010909090908854
+  leftFootAngle 0.20596363636363094
+  rightArmAngle 0.31985454545453307
+  rightLowerArmAngle -0.5075636363636272
+  rightHandAngle 0.0772363636363616
+  leftArmAngle -0.17112727272726372
+  leftLowerArmAngle -0.48021818181817705
+  leftHandAngle -0.22149090909090774
+  headAngle 0.0320727272727288
 }
 Pedestrian {
-  translation -65 -44 1.27
+  hidden translation_2 0.05125419783697923 5.551115123125783e-17 0.0098669290570213
+  hidden rotation_2 0 -1 0 0.27520000000001743
+  hidden translation_3 -0.051494511711606246 -5.551115123125783e-17 0.007815521265859188
+  hidden rotation_3 0 -1 0 0.5352000000000086
+  hidden translation_4 -0.08792333150804688 2.7755575615628914e-17 -0.002135730218210341
+  hidden rotation_4 0 -1 0 0.23720000000000302
+  hidden translation_5 -0.08594823465757791 0 0.015552685167132818
+  hidden rotation_5 0 1 0 0.4632000000000234
+  hidden translation_6 -0.059120087172050396 -5.551115123125783e-17 0.006614813908288358
+  hidden rotation_6 0 -1 0 0.6136000000000175
+  hidden translation_7 0.03705521284587551 -2.7755575615628914e-17 -0.00540015592195392
+  hidden rotation_7 0 1 0 0.10080000000000462
+  hidden translation_8 0.06473198347161938 2.7755575615628914e-17 -0.0160436448358649
+  hidden rotation_8 0 1 0 0.22080000000000422
+  hidden translation_9 0.08896292686791953 2.7755575615628914e-17 -0.00876912867546642
+  hidden rotation_9 0 1 0 0.1176000000000051
+  hidden translation_10 0.30609085438747075 0 -0.06626769791133658
+  hidden rotation_10 0 1 0 0.26880000000001
+  hidden translation_11 -0.28811421305229784 2.7755575615628914e-17 -0.12668139949376755
+  hidden rotation_11 0 -1 0 1.093600000000009
+  hidden translation_12 0.7211350214116274 -2.7755575615628914e-17 -0.8795666325065398
+  hidden rotation_12 0 1 0 1.689200000000004
+  hidden translation_13 -0.055537266745481706 0 0.0030579904626353294
+  hidden rotation_13 0 -1 0 0.04760000000000534
+  hidden translation_14 -0.005326779084143829 0 0.00018235596052773584
+  hidden rotation_14 0 1 0 0.014400000000003174
+  translation 59.95519999999999 -44 1.3436000000000012
+  rotation 0 0 1 3.141592653589793
   name "ped_7"
-  controllerArgs [ "--trajectory=-65 -44, 65 -44" "--speed=1.1" ]
+  controllerArgs [
+    "--trajectory=-65 -44, 65 -44"
+    "--speed=1.1"
+  ]
   shirtColor 0.3 0.8 0.5
+  rightLegAngle -1.0936000000000092
+  rightLowerLegAngle 1.689200000000004
+  rightFootAngle -0.04760000000000446
+  leftLegAngle 0.22080000000000383
+  leftLowerLegAngle 0.11760000000000446
+  leftFootAngle 0.2688000000000102
+  rightArmAngle 0.4632000000000232
+  rightLowerArmAngle -0.6136000000000172
+  rightHandAngle 0.10080000000000382
+  leftArmAngle -0.2752000000000169
+  leftLowerArmAngle -0.5352000000000089
+  leftHandAngle -0.23720000000000255
+  headAngle 0.014399999999997134
 }
 Pedestrian {
-  translation -70 4 1.27
+  hidden translation_2 0.012708345202833283 0 0.0010970326909898465
+  hidden rotation_2 0 -1 0 0.06705454545450827
+  hidden translation_3 -0.04069059960396131 2.7755575615628914e-17 0.008486156754068774
+  hidden rotation_3 0 -1 0 0.42523636363634537
+  hidden translation_4 -0.07634148810953792 -5.551115123125783e-17 -0.0006547937756752331
+  hidden rotation_4 0 -1 0 0.20578181818181235
+  hidden translation_5 -0.03351822959530526 0 0.0011961523784472794
+  hidden rotation_5 0 1 0 0.17650909090904307
+  hidden translation_6 -0.03835560702323518 -2.7755575615628914e-17 0.008474849437498336
+  hidden rotation_6 0 -1 0 0.4015272727272374
+  hidden translation_7 0.019798974439200714 -2.7755575615628914e-17 -0.0024104566225913726
+  hidden rotation_7 0 0.9999999999999999 0 0.053672727272722175
+  hidden translation_8 0.05123856559968495 0 -0.011425011223578141
+  hidden rotation_8 0 1 0 0.17367272727271932
+  hidden translation_9 0.04749992770650967 2.7755575615628914e-17 -0.003366825201613577
+  hidden rotation_9 0 1 0 0.06261818181817358
+  hidden translation_10 0.16523383309504833 -2.7755575615628914e-17 -0.0250351956699586
+  hidden rotation_10 0 0.9999999999999999 0 0.14312727272725048
+  hidden translation_11 -0.26681002283183297 0 -0.09960735157440676
+  hidden rotation_11 0 -1 0 0.9797090909090717
+  hidden translation_12 0.7262580607892549 0 -0.8410786376999236
+  hidden rotation_12 0 1 0 1.638145454545446
+  hidden translation_13 0.008597233493940232 0 -0.0007108621079701116
+  hidden rotation_13 0 1 0 0.007381818181815319
+  hidden translation_14 -0.01838585741673606 0 0.0009549578998294117
+  hidden rotation_14 0 1 0 0.049745454545463155
+  translation 50.40160000000001 4 1.3278909090909066
+  rotation 0 0 1 3.141592653589793
   name "ped_8"
-  controllerArgs [ "--trajectory=-70 4, 70 4" "--speed=1.3" ]
+  controllerArgs [
+    "--trajectory=-70 4, 70 4"
+    "--speed=1.3"
+  ]
   shirtColor 0.7 0.1 0.3
+  rightLegAngle -0.9797090909090718
+  rightLowerLegAngle 1.638145454545446
+  rightFootAngle 0.007381818181827385
+  leftLegAngle 0.17367272727271937
+  leftLowerLegAngle 0.06261818181817262
+  leftFootAngle 0.1431272727272517
+  rightArmAngle 0.17650909090904293
+  rightLowerArmAngle -0.4015272727272372
+  rightHandAngle 0.053672727272719385
+  leftArmAngle -0.06705454545451062
+  leftLowerArmAngle -0.4252363636363452
+  leftHandAngle -0.20578181818181293
+  headAngle 0.049745454545460456
 }
 Pedestrian {
-  translation -65 -4 1.27
+  hidden translation_2 -0.0070386992245867995 5.551115123125783e-17 -0.0002399292938197184
+  hidden rotation_2 0 1 0 0.03701818181824402
+  hidden translation_3 -0.03527733588063911 0 0.008375283702847347
+  hidden rotation_3 0 -1 0 0.3702545454545134
+  hidden translation_4 -0.0705345483912377 0 -5.0955034844257785e-05
+  hidden rotation_4 0 -1 0 0.19007272727271735
+  hidden translation_5 -0.006305434584400011 0 -0.00022710160855063388
+  hidden rotation_5 0 1 0 0.033163636363552115
+  hidden translation_6 -0.027942484606725233 0 0.007747717735714643
+  hidden rotation_6 0 -1 0 0.2954909090908476
+  hidden translation_7 0.011122816927658666 0 -0.0012213594055945354
+  hidden rotation_7 0 0.9999999999999999 0 0.030109090909074484
+  hidden translation_8 0.04441399004440858 5.551115123125783e-17 -0.009355408987570424
+  hidden rotation_8 0 1 0 0.1501090909090785
+  hidden translation_9 0.026672730340746187 2.7755575615628914e-17 -0.0015224448701696147
+  hidden rotation_9 0 1 0 0.03512727272726071
+  hidden translation_10 0.09314205398153416 2.7755575615628914e-17 -0.011131974683630474
+  hidden rotation_10 0 1 0 0.08029090909087427
+  hidden translation_11 -0.25503709017947945 0 -0.08702335844712356
+  hidden rotation_11 0 -0.9999999999999999 0 0.9227636363636033
+  hidden translation_12 0.7280811612618839 0 -0.8217491128667734
+  hidden rotation_12 0 0.9999999999999999 0 1.612618181818167
+  hidden translation_13 0.04056255810680409 -2.7755575615628914e-17 -0.003915951281656893
+  hidden rotation_13 0 1 0 0.034872727272746866
+  hidden translation_14 -0.024903117607960663 0 0.0015142168532891187
+  hidden rotation_14 0 1 0 0.06741818181819312
+  translation 23.124800000000015 -4 1.320036363636359
+  rotation 0 0 1 3.141592653589793
   name "ped_9"
-  controllerArgs [ "--trajectory=-65 -4, 65 -4" "--speed=1.4" ]
+  controllerArgs [
+    "--trajectory=-65 -4, 65 -4"
+    "--speed=1.4"
+  ]
   shirtColor 0.4 0.4 0.4
+  rightLegAngle -0.9227636363636031
+  rightLowerLegAngle 1.612618181818167
+  rightFootAngle 0.034872727272743306
+  leftLegAngle 0.15010909090907715
+  leftLowerLegAngle 0.0351272727272567
+  leftFootAngle 0.08029090909087244
+  rightArmAngle 0.03316363636355277
+  rightLowerArmAngle -0.29549090909084724
+  rightHandAngle 0.030109090909077166
+  leftArmAngle 0.037018181818242527
+  leftLowerArmAngle -0.3702545454545134
+  leftHandAngle -0.19007272727271812
+  headAngle 0.06741818181819212
 }
 Pedestrian {
-  translation -70 36 1.27
+  hidden translation_2 0.032209654452457014 5.551115123125783e-17 0.004478181684729715
+  hidden rotation_2 0 -1 0 0.17112727272726483
+  hidden translation_3 -0.046101776170321615 2.7755575615628914e-17 0.00829938111487423
+  hidden rotation_3 0 -0.9999999999999999 0 0.48021818181817727
+  hidden translation_4 -0.08213822596970166 0 -0.0013497760038259088
+  hidden rotation_4 0 -1 0 0.22149090909090802
+  hidden translation_5 -0.06024860083794047 0 0.006492294129567033
+  hidden rotation_5 0 1 0 0.3198545454545326
+  hidden translation_6 -0.04878720120085258 5.551115123125783e-17 0.008095795501416564
+  hidden rotation_6 0 -1 0 0.5075636363636269
+  hidden translation_7 0.02844470650428174 -5.551115123125783e-17 -0.0038036466366909716
+  hidden rotation_7 0 1 0 0.07723636363636398
+  hidden translation_8 0.05801248374537938 2.7755575615628914e-17 -0.013654835853542435
+  hidden rotation_8 0 1 0 0.19723636363636177
+  hidden translation_9 0.06826855818413755 2.7755575615628914e-17 -0.0057829951052478235
+  hidden rotation_9 0 1 0 0.09010909090909024
+  hidden translation_10 0.23631028207518354 0 -0.04343798268499044
+  hidden rotation_10 0 0.9999999999999999 0 0.2059636363636305
+  hidden translation_11 -0.2778476581243051 -2.7755575615628914e-17 -0.11284099934872582
+  hidden rotation_11 0 -1 0 1.0366545454545406
+  hidden translation_12 0.7239421778245514 0 -0.8603553311846082
+  hidden rotation_12 0 1 0 1.6636727272727252
+  hidden translation_13 -0.023444112698493363 0 0.0016143708682414548
+  hidden rotation_13 0 -1 0 0.0201090909090918
+  hidden translation_14 -0.011859731835127065 0 0.0005109580459842777
+  hidden rotation_14 0 1 0 0.03207272727272374
+  translation 62.67840000000001 36 1.335745454545454
+  rotation 0 0 1 3.141592653589793
   name "ped_10"
-  controllerArgs [ "--trajectory=-70 36, 70 36" "--speed=1.2" ]
+  controllerArgs [
+    "--trajectory=-70 36, 70 36"
+    "--speed=1.2"
+  ]
   shirtColor 0.9 0.9 0.2
+  rightLegAngle -1.0366545454545404
+  rightLowerLegAngle 1.6636727272727252
+  rightFootAngle -0.020109090909088537
+  leftLegAngle 0.1972363636363616
+  leftLowerLegAngle 0.09010909090908854
+  leftFootAngle 0.20596363636363094
+  rightArmAngle 0.31985454545453307
+  rightLowerArmAngle -0.5075636363636272
+  rightHandAngle 0.0772363636363616
+  leftArmAngle -0.17112727272726372
+  leftLowerArmAngle -0.48021818181817705
+  leftHandAngle -0.22149090909090774
+  headAngle 0.0320727272727288
 }
 Pedestrian {
-  translation -65 44 1.27
+  hidden translation_2 0.06869218911413837 -5.551115123125783e-17 0.016773156316855165
+  hidden rotation_2 0 -1 0 0.37381818181816895
+  hidden translation_3 -0.05455443519131426 0 0.007407229794619635
+  hidden rotation_3 0 -1 0 0.5665454545454667
+  hidden translation_4 -0.08928740635623703 0 -0.0023345576327402084
+  hidden rotation_4 0 -1 0 0.24090909090909837
+  hidden translation_5 -0.1064764248688509 0 0.026011282569424976
+  hidden rotation_5 0 0.9999999999999999 0 0.584363636363632
+  hidden translation_6 -0.06628322271642399 -5.551115123125783e-17 0.004916764607938731
+  hidden rotation_6 0 -1 0 0.6883636363636473
+  hidden translation_7 0.04509791723822264 0 -0.007082208132339118
+  hidden rotation_7 0 0.9999999999999999 0 0.12290909090908883
+  hidden translation_8 0.07180253947445442 2.7755575615628914e-17 -0.01875243615799438
+  hidden rotation_8 0 1 0 0.2458181818181771
+  hidden translation_9 0.10902359299625933 0 -0.012221663465428745
+  hidden rotation_9 0 1 0 0.1443636363636321
+  hidden translation_10 0.34648190787445765 0 -0.08175366768828818
+  hidden rotation_10 0 1 0 0.30581818181819487
+  hidden translation_11 -0.29326764720995646 -5.551115123125783e-17 -0.1343029907429437
+  hidden rotation_11 0 -1 0 1.1240000000000139
+  hidden translation_12 0.7237436630233843 0 -0.8618356050312994
+  hidden rotation_12 0 0.9999999999999999 0 1.6656363636364038
+  hidden translation_13 -0.09403229369495542 -2.7755575615628914e-17 0.0036252050090042065
+  hidden rotation_13 0 -1 0 0.08054545454544634
+  hidden translation_14 -0.001210853375615096 0 3.470870013982941e-05
+  hidden rotation_14 0 1 0 0.0032727272727822426
+  translation 57.768 44 1.3460000000000036
   name "ped_11"
-  controllerArgs [ "--trajectory=-65 44, 65 44" "--speed=1.0" ]
+  controllerArgs [
+    "--trajectory=-65 44, 65 44"
+    "--speed=1.0"
+  ]
   shirtColor 0.5 0.8 0.9
+  rightLegAngle -1.1240000000000145
+  rightLowerLegAngle 1.6656363636364038
+  rightFootAngle -0.08054545454544497
+  leftLegAngle 0.24581818181817652
+  leftLowerLegAngle 0.14436363636363242
+  leftFootAngle 0.3058181818181947
+  rightArmAngle 0.5843636363636323
+  rightLowerArmAngle -0.688363636363647
+  rightHandAngle 0.12290909090908826
+  leftArmAngle -0.3738181818181693
+  leftLowerArmAngle -0.5665454545454667
+  leftHandAngle -0.24090909090909918
+  headAngle 0.0032727272727242963
 }
 Pedestrian {
-  translation -20 -65 1.27
+  hidden translation_2 0.012708345202833283 0 0.0010970326909898465
+  hidden rotation_2 0 -1 0 0.06705454545450827
+  hidden translation_3 -0.04069059960396131 2.7755575615628914e-17 0.008486156754068774
+  hidden rotation_3 0 -1 0 0.42523636363634537
+  hidden translation_4 -0.07634148810953792 -5.551115123125783e-17 -0.0006547937756752331
+  hidden rotation_4 0 -1 0 0.20578181818181235
+  hidden translation_5 -0.03351822959530526 0 0.0011961523784472794
+  hidden rotation_5 0 1 0 0.17650909090904307
+  hidden translation_6 -0.03835560702323518 -2.7755575615628914e-17 0.008474849437498336
+  hidden rotation_6 0 -1 0 0.4015272727272374
+  hidden translation_7 0.019798974439200714 -2.7755575615628914e-17 -0.0024104566225913726
+  hidden rotation_7 0 0.9999999999999999 0 0.053672727272722175
+  hidden translation_8 0.05123856559968495 0 -0.011425011223578141
+  hidden rotation_8 0 1 0 0.17367272727271932
+  hidden translation_9 0.04749992770650967 2.7755575615628914e-17 -0.003366825201613577
+  hidden rotation_9 0 1 0 0.06261818181817358
+  hidden translation_10 0.16523383309504833 -2.7755575615628914e-17 -0.0250351956699586
+  hidden rotation_10 0 0.9999999999999999 0 0.14312727272725048
+  hidden translation_11 -0.26681002283183297 0 -0.09960735157440676
+  hidden rotation_11 0 -1 0 0.9797090909090717
+  hidden translation_12 0.7262580607892549 0 -0.8410786376999236
+  hidden rotation_12 0 1 0 1.638145454545446
+  hidden translation_13 0.008597233493940232 0 -0.0007108621079701116
+  hidden rotation_13 0 1 0 0.007381818181815319
+  hidden translation_14 -0.01838585741673606 0 0.0009549578998294117
+  hidden rotation_14 0 1 0 0.049745454545463155
+  translation -3.5836949126455693 65 1.3278909090909066
+  rotation 0 0 1 3.141592653589793
   name "ped_12"
-  controllerArgs [ "--trajectory=-20 -65, 20 65, -20 65, 20 -65" "--speed=1.3" ]
+  controllerArgs [
+    "--trajectory=-20 -65, 20 65, -20 65, 20 -65"
+    "--speed=1.3"
+  ]
   shirtColor 0.8 0.3 0.6
+  rightLegAngle -0.9797090909090718
+  rightLowerLegAngle 1.638145454545446
+  rightFootAngle 0.007381818181827385
+  leftLegAngle 0.17367272727271937
+  leftLowerLegAngle 0.06261818181817262
+  leftFootAngle 0.1431272727272517
+  rightArmAngle 0.17650909090904293
+  rightLowerArmAngle -0.4015272727272372
+  rightHandAngle 0.053672727272719385
+  leftArmAngle -0.06705454545451062
+  leftLowerArmAngle -0.4252363636363452
+  leftHandAngle -0.20578181818181293
+  headAngle 0.049745454545460456
 }
 Pedestrian {
-  translation 20 -65 1.27
+  hidden translation_2 0.05125419783697923 5.551115123125783e-17 0.0098669290570213
+  hidden rotation_2 0 -1 0 0.27520000000001743
+  hidden translation_3 -0.051494511711606246 -5.551115123125783e-17 0.007815521265859188
+  hidden rotation_3 0 -1 0 0.5352000000000086
+  hidden translation_4 -0.08792333150804688 2.7755575615628914e-17 -0.002135730218210341
+  hidden rotation_4 0 -1 0 0.23720000000000302
+  hidden translation_5 -0.08594823465757791 0 0.015552685167132818
+  hidden rotation_5 0 1 0 0.4632000000000234
+  hidden translation_6 -0.059120087172050396 -5.551115123125783e-17 0.006614813908288358
+  hidden rotation_6 0 -1 0 0.6136000000000175
+  hidden translation_7 0.03705521284587551 -2.7755575615628914e-17 -0.00540015592195392
+  hidden rotation_7 0 1 0 0.10080000000000462
+  hidden translation_8 0.06473198347161938 2.7755575615628914e-17 -0.0160436448358649
+  hidden rotation_8 0 1 0 0.22080000000000422
+  hidden translation_9 0.08896292686791953 2.7755575615628914e-17 -0.00876912867546642
+  hidden rotation_9 0 1 0 0.1176000000000051
+  hidden translation_10 0.30609085438747075 0 -0.06626769791133658
+  hidden rotation_10 0 1 0 0.26880000000001
+  hidden translation_11 -0.28811421305229784 2.7755575615628914e-17 -0.12668139949376755
+  hidden rotation_11 0 -1 0 1.093600000000009
+  hidden translation_12 0.7211350214116274 -2.7755575615628914e-17 -0.8795666325065398
+  hidden rotation_12 0 1 0 1.689200000000004
+  hidden translation_13 -0.055537266745481706 0 0.0030579904626353294
+  hidden rotation_13 0 -1 0 0.04760000000000534
+  hidden translation_14 -0.005326779084143829 0 0.00018235596052773584
+  hidden rotation_14 0 1 0 0.014400000000003174
+  translation -19.714764639093545 64.07298507705403 1.3436000000000012
+  rotation 0 0 1 1.8692952583810758
   name "ped_13"
-  controllerArgs [ "--trajectory=20 -65, -20 65" "--speed=1.1" ]
+  controllerArgs [
+    "--trajectory=20 -65, -20 65"
+    "--speed=1.1"
+  ]
   shirtColor 0.2 0.9 0.7
+  rightLegAngle -1.0936000000000092
+  rightLowerLegAngle 1.689200000000004
+  rightFootAngle -0.04760000000000446
+  leftLegAngle 0.22080000000000383
+  leftLowerLegAngle 0.11760000000000446
+  leftFootAngle 0.2688000000000102
+  rightArmAngle 0.4632000000000232
+  rightLowerArmAngle -0.6136000000000172
+  rightHandAngle 0.10080000000000382
+  leftArmAngle -0.2752000000000169
+  leftLowerArmAngle -0.5352000000000089
+  leftHandAngle -0.23720000000000255
+  headAngle 0.014399999999997134
 }
 Pedestrian {
-  translation 0 -75 1.27
+  hidden translation_2 -0.0070386992245867995 5.551115123125783e-17 -0.0002399292938197184
+  hidden rotation_2 0 1 0 0.03701818181824402
+  hidden translation_3 -0.03527733588063911 0 0.008375283702847347
+  hidden rotation_3 0 -1 0 0.3702545454545134
+  hidden translation_4 -0.0705345483912377 0 -5.0955034844257785e-05
+  hidden rotation_4 0 -1 0 0.19007272727271735
+  hidden translation_5 -0.006305434584400011 0 -0.00022710160855063388
+  hidden rotation_5 0 1 0 0.033163636363552115
+  hidden translation_6 -0.027942484606725233 0 0.007747717735714643
+  hidden rotation_6 0 -1 0 0.2954909090908476
+  hidden translation_7 0.011122816927658666 0 -0.0012213594055945354
+  hidden rotation_7 0 0.9999999999999999 0 0.030109090909074484
+  hidden translation_8 0.04441399004440858 5.551115123125783e-17 -0.009355408987570424
+  hidden rotation_8 0 1 0 0.1501090909090785
+  hidden translation_9 0.026672730340746187 2.7755575615628914e-17 -0.0015224448701696147
+  hidden rotation_9 0 1 0 0.03512727272726071
+  hidden translation_10 0.09314205398153416 2.7755575615628914e-17 -0.011131974683630474
+  hidden rotation_10 0 1 0 0.08029090909087427
+  hidden translation_11 -0.25503709017947945 0 -0.08702335844712356
+  hidden rotation_11 0 -0.9999999999999999 0 0.9227636363636033
+  hidden translation_12 0.7280811612618839 0 -0.8217491128667734
+  hidden rotation_12 0 0.9999999999999999 0 1.612618181818167
+  hidden translation_13 0.04056255810680409 -2.7755575615628914e-17 -0.003915951281656893
+  hidden rotation_13 0 1 0 0.034872727272746866
+  hidden translation_14 -0.024903117607960663 0 0.0015142168532891187
+  hidden rotation_14 0 1 0 0.06741818181819312
+  translation 0 53.12480000000002 1.320036363636359
+  rotation 0 0 1 -1.5707963267948966
   name "ped_14"
-  controllerArgs [ "--trajectory=0 -75, 0 75" "--speed=1.4" ]
+  controllerArgs [
+    "--trajectory=0 -75, 0 75"
+    "--speed=1.4"
+  ]
   shirtColor 0.6 0.6 0.1
+  rightLegAngle -0.9227636363636031
+  rightLowerLegAngle 1.612618181818167
+  rightFootAngle 0.034872727272743306
+  leftLegAngle 0.15010909090907715
+  leftLowerLegAngle 0.0351272727272567
+  leftFootAngle 0.08029090909087244
+  rightArmAngle 0.03316363636355277
+  rightLowerArmAngle -0.29549090909084724
+  rightHandAngle 0.030109090909077166
+  leftArmAngle 0.037018181818242527
+  leftLowerArmAngle -0.3702545454545134
+  leftHandAngle -0.19007272727271812
+  headAngle 0.06741818181819212
 }
-
-# ── UAVs (5 DJI Mavic 2 Pro) ─────────────────────────────────────────────────
-# Spawn positions pre-staggered to match uav_swarm_controller patrol at t=0:
-#   offset_angle_i = i * (2*pi/5), radius=20m, altitude=15m (ENU Z)
-#   UAV_0: angle=0.000 rad -> (20.0,   0.0,  15)
-#   UAV_1: angle=1.257 rad -> ( 6.2,  19.0,  15)
-#   UAV_2: angle=2.513 rad -> (-16.2,  11.8,  15)
-#   UAV_3: angle=3.770 rad -> (-16.2, -11.8,  15)
-#   UAV_4: angle=5.027 rad -> ( 6.2, -19.0,  15)
-# All use controller "uav_camera" — supervisor moves them via setSFVec3f.
 DEF UAV_0 Mavic2Pro {
-  translation 20.0 0.0 15
-  rotation 0 0 1 0
+  translation 16.67697525024414 3.183055877685546 15
+  rotation 0 0 1 2.473959644038513
   name "UAV_0"
   controller "uav_camera"
   customData "uav_id=0"
 }
 DEF UAV_1 Mavic2Pro {
-  translation 6.2 19.0 15
-  rotation 0 0 1 1.2566
+  translation 19.793676376342773 19.61670303344727 10.738655090332031
+  rotation 0 0 1 0.21408442022244914
   name "UAV_1"
   controller "uav_camera"
   customData "uav_id=1"
 }
 DEF UAV_2 Mavic2Pro {
-  translation -16.2 11.8 15
-  rotation 0 0 1 2.5133
+  translation -28.827882766723633 8.157214164733885 15
+  rotation 0 0 1 -2.649725761434744
   name "UAV_2"
   controller "uav_camera"
   customData "uav_id=2"
 }
 DEF UAV_3 Mavic2Pro {
-  translation -16.2 -11.8 15
-  rotation 0 0 1 3.7699
+  translation -8.52372932434082 -11.411549568176271 12.876923561096191
+  rotation 0 0 1 0.25913318451257517
   name "UAV_3"
   controller "uav_camera"
   customData "uav_id=3"
 }
 DEF UAV_4 Mavic2Pro {
-  translation 6.2 -19.0 15
-  rotation 0 0 1 5.0265
+  translation 5.180084228515625 -21.630132675170902 15
+  rotation 0 0 -1 0.04811333233817587
   name "UAV_4"
   controller "uav_camera"
   customData "uav_id=4"
 }
-
-# ── BIRDS (8) using custom Bird PROTO ────────────────────
-
 DEF BIRD_0 Bird {
-  translation 15 10 7
+  hidden linearVelocity_0 7.900237575461727e-06 1.4068745825327246e-05 14.107717578729615
+  hidden angularVelocity_0 0.00023732785617553898 -1.9880014965842174e-05 7.151697053923689e-05
+  translation 1.3604230859149058 13.859292595575635 5.180973149070228
+  rotation 0.4389395327427601 0.7554703465371605 0.486412008587977 2.481837086535548
   name "bird_0"
 }
 DEF BIRD_1 Bird {
-  translation -12 8 8
+  hidden linearVelocity_0 0 0 14.107879821611684
+  translation -0.8031220677855124 -0.7947754578356352 10.597934455710488
   name "bird_1"
   color 0.35 0.28 0.18
 }
 DEF BIRD_2 Bird {
-  translation 8 -15 6
+  hidden linearVelocity_0 0 0 14.107879821611684
+  translation -3.8429570510000186 -14.432679148046093 4.580032871165901
   name "bird_2"
   color 0.2 0.2 0.15
 }
 DEF BIRD_3 Bird {
-  translation -20 -10 9
+  hidden linearVelocity_0 0 0 14.107879821611684
+  translation -5.824790045760032 -12.591920765965828 8.768328226400547
   name "bird_3"
   color 0.4 0.35 0.25
 }
 DEF BIRD_4 Bird {
-  translation 22 5 7
+  hidden linearVelocity_0 0 0 14.107879821611684
+  translation 1.5831939659431615 20.98556163207575 9.12847419768938
   name "bird_4"
 }
 DEF BIRD_5 Bird {
-  translation -5 20 8
+  hidden linearVelocity_0 0 0 14.107879821611684
+  translation 13.594578195626603 10.792386479448435 5.647609183933735
   name "bird_5"
   color 0.3 0.22 0.14
 }
 DEF BIRD_6 Bird {
-  translation 10 -20 9
+  hidden linearVelocity_0 -0.0009259819574260017 0.0383523839972208 14.069323520542135
+  hidden angularVelocity_0 0.012313392853738676 -0.0058187206118972545 -0.0009502479912621142
+  translation -7.708501272008334 -8.102290569454146 10.538274955504603
+  rotation -0.8475869442436822 0.42042496690433423 -0.32378884963992627 1.0935075641953962
   name "bird_6"
   color 0.45 0.38 0.28
 }
 DEF BIRD_7 Bird {
-  translation -18 15 6
+  hidden linearVelocity_0 -0.010811204385051022 -0.07827033648187692 14.009988405038573
+  hidden angularVelocity_0 -0.10408101635030526 -0.014212065940418777 -0.054400063253720495
+  translation -1.6474409805015027 0.25650380738081136 6.590477499051263
+  rotation 0.970118917607413 0.186086492547583 -0.15569554583082926 2.5480799353782473
   name "bird_7"
   color 0.25 0.18 0.12
 }
-
-# ── SUPERVISOR ROBOT (moves UAVs via supervisor API) ─────
 Robot {
-  translation 0 0 0
   name "swarm_supervisor"
   controller "uav_swarm_controller"
   supervisor TRUE
-  children [
-  ]
-  boundingObject NULL
-  physics NULL
 }

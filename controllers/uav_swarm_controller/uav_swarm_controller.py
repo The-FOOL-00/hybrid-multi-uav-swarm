@@ -496,7 +496,7 @@ class MultiUAVSurveillance:
                 trainer = Trainer(
                     scenario="downtown",
                     episodes=500,
-                    max_steps=1000,
+                    max_steps=5000,       # was 1000 → matched to UAVSwarmEnv.MAX_STEPS
                     headless=headless_run,  # Dynamically resolved from launch script env var
                     log_interval=10,
                     save_interval=50000,  # Save model checkpoints every 50k steps

@@ -43,6 +43,9 @@ class SwarmTrainingCallback(BaseCallback):
         self.episode_oobs = []
         self.current_ep_reward = 0.0
         self.metrics_history = []
+        # Timing for steps/sec calculation
+        self._training_start_time = time.time()
+        self._ep_start_time = time.time()
 
     def _on_step(self) -> bool:
         # 1. Accumulate step reward for current episode
@@ -57,7 +60,12 @@ class SwarmTrainingCallback(BaseCallback):
             current_step = step_info.get("step", 0)
             if current_step > 0 and current_step % 100 == 0:
                 current_cov = step_info.get("coverage", 0.0)
-                print(f" -> Episode Step {current_step:>4}/1000 | Current Coverage: {current_cov:5.2f}%")
+                # Dynamically retrieve max horizon from the wrapped env
+                try:
+                    max_h = self.training_env.envs[0].env.MAX_STEPS
+                except Exception:
+                    max_h = 5000
+                print(f" -> Episode Step {current_step:>4}/{max_h} | Current Coverage: {current_cov:5.2f}%")
                 
                 # Retrieve raw 3D coordinates (X, Y, Z) from environment for visual verification
                 try:
@@ -87,6 +95,12 @@ class SwarmTrainingCallback(BaseCallback):
             self.episode_collisions.append(coll)
             self.episode_oobs.append(oob)
             
+            # Compute episode wall-clock duration and steps/sec
+            ep_end_time = time.time()
+            ep_duration_sec = ep_end_time - self._ep_start_time
+            elapsed_total = ep_end_time - self._training_start_time
+            steps_per_sec = self.n_calls / elapsed_total if elapsed_total > 0 else 0.0
+            
             # Print episodic progress at intervals
             if self.episode_count % self.log_interval == 0:
                 avg_r = np.mean(self.episode_rewards[-self.log_interval:])
@@ -98,7 +112,8 @@ class SwarmTrainingCallback(BaseCallback):
                     f"AvgReward: {avg_r:>7.2f} | "
                     f"AvgCoverage: {avg_c:>5.1f}% | "
                     f"AvgTRR: {avg_t:>5.1f}% | "
-                    f"Collisions: {avg_coll:>2.0f}"
+                    f"Collisions: {avg_coll:>2.0f} | "
+                    f"Steps/sec: {steps_per_sec:>5.1f}"
                 )
                 
             # Log custom metrics to TensorBoard logger
@@ -107,6 +122,7 @@ class SwarmTrainingCallback(BaseCallback):
             self.logger.record("episode/trr", trr)
             self.logger.record("episode/is_collision", coll)
             self.logger.record("episode/is_out_of_bounds", oob)
+            self.logger.record("episode/steps_per_sec", steps_per_sec)
             
             # Save historical metrics record to JSON file
             record = {
@@ -116,7 +132,9 @@ class SwarmTrainingCallback(BaseCallback):
                 "trr": float(trr),
                 "is_collision": int(coll),
                 "is_out_of_bounds": int(oob),
-                "timestamp": time.time()
+                "episode_duration_sec": round(ep_duration_sec, 3),
+                "steps_per_sec": round(steps_per_sec, 2),
+                "timestamp": ep_end_time
             }
             self.metrics_history.append(record)
             metrics_path = os.path.join(self.metrics_dir, "metrics.json")
@@ -126,8 +144,9 @@ class SwarmTrainingCallback(BaseCallback):
             except Exception as e:
                 print(f"[WARN] Failed to write metrics JSON: {e}")
                 
-            # Reset episode reward accumulator
+            # Reset episode reward accumulator and episode timer
             self.current_ep_reward = 0.0
+            self._ep_start_time = time.time()
 
         # 3. Save periodic model weights
         if self.n_calls % self.check_freq == 0:
@@ -151,7 +170,7 @@ class Trainer:
         self,
         scenario: str = "downtown",
         episodes: int = 500,
-        max_steps: int = 1000,
+        max_steps: int = 5000,       # was 1000 → increased for meaningful exploration
         headless: bool = True,
         log_interval: int = 10,
         save_interval: int = 50000,  # step-level saving frequency
@@ -337,7 +356,8 @@ def _parse_args():
     p.add_argument("--scenario", default="downtown",
                    choices=Trainer.SUPPORTED_SCENARIOS)
     p.add_argument("--episodes", type=int, default=500)
-    p.add_argument("--max-steps", type=int, default=1000)
+    p.add_argument("--max-steps", type=int, default=5000,
+                   help="Max steps per episode (default: 5000)")
     p.add_argument("--headless", action="store_true", default=True)
     p.add_argument("--log-interval", type=int, default=10)
     p.add_argument("--save-interval", type=int, default=50000)

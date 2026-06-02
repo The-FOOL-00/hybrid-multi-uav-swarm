@@ -1,0 +1,24 @@
+[
+    {
+        "episode": 1,
+        "reward": 925.5366821289062,
+        "coverage": 3.6265432098765435,
+        "trr": 33.33333333333333,
+        "is_collision": 0,
+        "is_out_of_bounds": 0,
+        "episode_duration_sec": 229.64,
+        "steps_per_sec": 21.77,
+        "timestamp": 1780391745.552915
+    },
+    {
+        "episode": 2,
+        "reward": -49784.7578125,
+        "coverage": 3.2407407407407405,
+        "trr": 0.0,
+        "is_collision": 0,
+        "is_out_of_bounds": 0,
+        "episode_duration_sec": 252.989,
+        "steps_per_sec": 20.72,
+        "timestamp": 1780391998.5744681
+    }
+]
