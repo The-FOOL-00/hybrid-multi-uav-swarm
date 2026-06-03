@@ -81,6 +81,19 @@ hybrid-multi-uav-swarm/
 
 ---
 
+## Git Repository & Branches
+
+This repository uses a multi-branch workflow to organize research, feature migrations, and reinforcement learning stabilization:
+
+* **`main`**: The primary production-ready branch. It integrates the decentralized Multi-UAV Swarm surveillance system, including all 5 world scenarios, the Attention-Guided POMDP patrol framework, and the completed Phase 3 RL Gym environment wrapper integrated with Stable-Baselines3 PPO.
+* **`webots-research-architecture`**: Established the baseline directory layouts, base controllers, custom PROTO files, and environment configs before incorporating Mavic-specific components or reinforcement learning frameworks.
+* **`dji-mavic-migration`**: Migrated the simulation from generic UAV models to DJI Mavic 2 Pro drones, enabling onboard camera systems, propeller rotation visualizations, and addressing gimbal-related physics/warning messages.
+* **`phase1-rl-webots-bridge`**: Implemented Phases 1 and 2 of the reinforcement learning integration, laying down the synchronized Gym interface IPC architecture and observation/action space mapping, while solving drone tumbling issues.
+* **`rl-stability-improvements`**: Developed and integrated stability patches for the multi-agent RL training environment and added metric/benchmark logging pipelines to analyze swarm coverage performance.
+* **`single-drone-navigation-baseline`**: A research branch containing navigation, path-planning, and collision-avoidance algorithms for a single UAV. It includes a custom test environment (`worlds/single_drone_downtown.wbt`) to contrast single-drone baseline performance against the multi-UAV swarm.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
