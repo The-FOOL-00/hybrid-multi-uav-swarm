@@ -128,8 +128,22 @@ logging:
     - uav_positions
 
 # ── RL Training Parameters ───────────────────────────────────────────────
+# ── Baseline navigation (single-drone phase) ────────────────────────────
+# Set baseline_navigation.enabled: true  AND  rl.enabled: false
+# to run the deterministic start→target navigation baseline.
+baseline_navigation:
+  enabled: true
+  active_uav: 0                # only UAV_0 moves; UAV_1-4 are frozen
+  start_position: [-40.0, 48.0, 15.0]   # ENU  (x, y, z)
+  target_position: [50.0, 48.0, 15.0]  # ENU  (x, y, z)
+  cruise_speed: 0.3            # m/step — smooth visual motion (~285 steps across 85m)
+  arrival_radius: 3.0          # metres — declare ARRIVED when dist < this
+  altitude: 15.0               # m  — constant cruise altitude
+  log_interval_steps: 100      # console log every N steps
+
 rl:
-  enabled: true               # set true when RL training is active
+  enabled: false              # TEMPORARILY DISABLED for single-drone baseline
+                              # Re-enable: set to true (also set baseline_navigation.enabled: false)
   algorithm: "PPO"             # planned: PPO, MAPPO
   episodes: 1000
   # Episode horizon increased from 1000 → 5000 steps for meaningful exploration.

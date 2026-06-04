@@ -15,6 +15,318 @@ import os
 import yaml
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SINGLE-DRONE NAVIGATION BASELINE
+# Phase 1 of the hybrid-multi-UAV-swarm development pipeline.
+# Deterministic start → target mission for engineering baseline validation.
+# ────────────────────────────────────────────────────────────────────────────────
+class SingleDroneNavigation:
+    """
+    Simple deterministic waypoint navigation for UAV_0.
+
+    Algorithm:
+        1. TAKEOFF  — teleport UAV_0 to start_position.
+        2. NAVIGATE — each step compute:
+               direction = normalize(target - current)
+               new_pos   = current + direction * speed
+               new_pos.z = altitude  # lock altitude
+           Move drone there via setSFVec3f (supervisor teleport, same as
+           the existing patrol mode — no physics engine involvement).
+        3. ARRIVED  — once dist_to_target < arrival_radius, stop moving
+           and announce mission complete.
+
+    UAV_1-4 are parked at their initial positions and never updated.
+    RL and random patrol are NOT used in this mode.
+    """
+
+    # State constants
+    STATE_TAKEOFF  = "TAKEOFF"
+    STATE_NAVIGATE = "NAVIGATE"
+    STATE_ARRIVED  = "ARRIVED"
+
+    def __init__(self, parent: "MultiUAVSurveillance", cfg: dict):
+        """
+        Parameters
+        ----------
+        parent : MultiUAVSurveillance
+            The supervisor controller (provides node refs, step function, etc.)
+        cfg : dict
+            The `baseline_navigation` sub-dict from environment_config.yaml.
+        """
+        self.parent        = parent
+        self.supervisor    = parent.supervisor
+        self.timestep      = parent.timestep
+
+        # Mission parameters (fall back to hardcoded defaults if YAML missing)
+        start = cfg.get("start_position", [-40.0, 15.0, 15.0])
+        tgt   = cfg.get("target_position", [40.0, -15.0, 15.0])
+        self.start_pos     = list(start)
+        self.target_pos    = list(tgt)
+        # FIX-1: speed reduced to 0.3 m/step for smooth visual motion.
+        # At 8ms/step this equals 37.5 m/s supervisor-teleport velocity.
+        # Mission distance ≈85.4m → ~285 visible steps across the city.
+        self.cruise_speed  = float(cfg.get("cruise_speed", 0.3))
+        self.arrival_radius= float(cfg.get("arrival_radius", 3.0))
+        self.altitude      = float(cfg.get("altitude", 15.0))
+        self.log_interval  = int(cfg.get("log_interval_steps", 100))
+
+        # UAV_0 node references (index 0 in parent lists)
+        if len(parent.uav_trans) == 0:
+            raise RuntimeError("[SingleDroneNav] UAV_0 not found in scene!")
+        self.uav_tf = parent.uav_trans[0]   # translation field
+        self.uav_rf = parent.uav_rot[0]     # rotation field
+        self.uav_node = parent.uavs[0]      # Mavic2Pro node
+
+        self.state       = self.STATE_TAKEOFF
+        self.step_count  = 0
+        self.arrived_reported = False
+
+        # Lightweight obstacle list for collision testing (radius roughly approximates footprint)
+        self.test_buildings = [
+            {"name": "office_nw2", "x": -36.0, "y": 48.0, "r": 8.0},
+            {"name": "tower_c",    "x": 24.0,  "y": 46.0, "r": 7.0},
+            {"name": "tower_b",    "x": 36.0,  "y": 48.0, "r": 8.5},
+            {"name": "tower_a",    "x": 24.0,  "y": 58.0, "r": 8.0},
+            {"name": "office_nw1", "x": -26.0, "y": 60.0, "r": 11.0}
+        ]
+        self.last_warning_step = -999
+
+        # Park UAV_1-4 at their initial positions so they don't drift
+        self._park_inactive_uavs()
+
+        self._print_banner()
+
+    # ── Setup helpers ─────────────────────────────────────────────────────
+
+    def _park_inactive_uavs(self):
+        """
+        Freeze UAV_1-4 at their initial world positions on startup.
+        Also resets physics so no accumulated propeller thrust carries over.
+        They will not be updated during the baseline run.
+        This is a DISABLE (freeze), NOT a deletion.
+
+        FIX-3 (initial setup): setSFVec3f + resetPhysics() stops uav_camera.py
+        propellers from lifting UAV_1-4 on the very first steps.
+        """
+        parent = self.parent
+        for i in range(1, parent.num_uavs):
+            if i < len(parent.uav_trans):
+                init_pos = list(parent.initial_translations[i])
+                parent.uav_trans[i].setSFVec3f(init_pos)
+                parent.uav_rot[i].setSFRotation(list(parent.initial_rotations[i]))
+                try:
+                    parent.uavs[i].resetPhysics()   # kill propeller momentum
+                except Exception:
+                    pass
+        print("[SingleDroneNav] UAV_1-4 frozen + physics reset (inactive).")
+
+    def _suppress_inactive_uavs(self):
+        """
+        Called every simulation step to keep UAV_1-4 pinned.
+
+        FIX-3 (per-step): uav_camera.py runs on each Mavic2Pro and spins
+        propellers at HOVER_RPM every step.  The ODE physics engine
+        accumulates thrust into upward velocity between supervisor steps.
+        Calling resetPhysics() each step zeroes that accumulated velocity
+        before physics integrates it, making UAV_1-4 truly stationary.
+        """
+        parent = self.parent
+        for i in range(1, parent.num_uavs):
+            if i < len(parent.uav_trans):
+                parent.uav_trans[i].setSFVec3f(
+                    list(parent.initial_translations[i])
+                )
+                try:
+                    parent.uavs[i].resetPhysics()
+                except Exception:
+                    pass
+
+    def _print_banner(self):
+        print("\n" + "=" * 64)
+        print("  SINGLE DRONE NAVIGATION BASELINE  (Phase 1)")
+        print("  NO RL  |  NO RANDOM PATROL  |  NO SWARM")
+        print("  -" * 32)
+        print(f"  Active drone : UAV_0")
+        print(f"  Start        : {self.start_pos}")
+        print(f"  Target       : {self.target_pos}")
+        print(f"  Altitude     : {self.altitude} m (constant)")
+        print(f"  Speed        : {self.cruise_speed} m/step")
+        print(f"  Arrival zone : {self.arrival_radius} m radius")
+        print("  States       : TAKEOFF → NAVIGATE → ARRIVED")
+        print("=" * 64 + "\n")
+
+    # ── Navigation logic ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _dist3(a, b):
+        return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2)
+
+    @staticmethod
+    def _dist2(a, b):
+        """Horizontal distance (XY plane only)."""
+        return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
+
+    def _move_toward_target(self):
+        """
+        Compute one step of vector steering.
+
+        direction = normalize(target_xy - current_xy)
+        new_xy    = current_xy + direction * cruise_speed
+        new_z     = altitude  (altitude lock — no climbing/falling)
+
+        Returns the new [x, y, z] position.
+        """
+        cur = list(self.uav_tf.getSFVec3f())
+        tx, ty = self.target_pos[0], self.target_pos[1]
+        dx, dy = tx - cur[0], ty - cur[1]
+        horiz_dist = math.hypot(dx, dy)
+
+        if horiz_dist < 1e-4:
+            # Already aligned horizontally — hold position
+            return [tx, ty, self.altitude]
+
+        # Normalise and scale
+        scale = min(self.cruise_speed, horiz_dist)  # don’t overshoot
+        ux, uy = dx / horiz_dist, dy / horiz_dist
+        new_x = cur[0] + ux * scale
+        new_y = cur[1] + uy * scale
+        new_z = self.altitude  # altitude lock (simple rule-based, no PID)
+
+        return [new_x, new_y, new_z]
+
+    def _orient_toward(self, prev_pos, new_pos):
+        """
+        Rotate UAV_0 in the direction of travel (yaw only, Z-up ENU).
+        Uses the same axis-angle [0,0,1,yaw] convention as the patrol code.
+        """
+        dx = new_pos[0] - prev_pos[0]
+        dy = new_pos[1] - prev_pos[1]
+        if math.hypot(dx, dy) > 1e-4:
+            yaw = math.atan2(dy, dx)
+            self.uav_rf.setSFRotation([0.0, 0.0, 1.0, yaw])
+
+    # ── Per-step update ───────────────────────────────────────────────────
+
+    def step(self):
+        """
+        Called once per simulation step.
+        Returns True while the mission is running; False when ARRIVED
+        (caller can then choose to keep the loop alive for visual inspection).
+        """
+        self.step_count += 1
+
+        # Suppress UAV_1-4 every step (keeps propeller thrust from lifting them)
+        self._suppress_inactive_uavs()
+
+        # ── STATE: TAKEOFF ─────────────────────────────────────────────
+        if self.state == self.STATE_TAKEOFF:
+            # Teleport UAV_0 to the fixed start position and zero its physics.
+            # FIX-2: resetPhysics() after setSFVec3f clears any propeller
+            # momentum accumulated since last step, preventing altitude drift.
+            self.uav_tf.setSFVec3f(self.start_pos)
+            self.uav_rf.setSFRotation([0.0, 0.0, 1.0, 0.0])  # face East
+            try:
+                self.uav_node.resetPhysics()   # zero accumulated thrust
+            except Exception:
+                pass
+            print(f"[SingleDroneNav] STATE: TAKEOFF")
+            print(f"  UAV_0 placed at start: {self.start_pos}")
+            print(f"  Target               : {self.target_pos}")
+            total_dist = self._dist3(self.start_pos, self.target_pos)
+            print(f"  Total mission dist   : {total_dist:.1f} m")
+            print(f"  Estimated steps      : ~{int(total_dist / self.cruise_speed)} steps\n")
+            self.state = self.STATE_NAVIGATE
+            return True
+
+        # ── STATE: NAVIGATE ───────────────────────────────────────────
+        if self.state == self.STATE_NAVIGATE:
+            cur = list(self.uav_tf.getSFVec3f())
+            dist_to_target = self._dist3(cur, self.target_pos)
+
+            if dist_to_target <= self.arrival_radius:
+                # Mission complete — snap exactly to target, hold
+                self.uav_tf.setSFVec3f(self.target_pos)
+                self.state = self.STATE_ARRIVED
+                return True
+
+            prev_pos = list(cur)
+            new_pos  = self._move_toward_target()
+            self.uav_tf.setSFVec3f(new_pos)
+            self._orient_toward(prev_pos, new_pos)
+            # FIX-2: reset physics AFTER every position update.
+            # This zeroes the ODE velocity buffer so propeller thrust from
+            # uav_camera.py cannot accumulate altitude between steps.
+            # The drone's Z will always be exactly self.altitude next read.
+            try:
+                self.uav_node.resetPhysics()
+            except Exception:
+                pass
+
+            # Lightweight Collision Check
+            closest_name, min_dist = self._check_collision_distance(cur)
+            if min_dist < 4.0 and (self.step_count - self.last_warning_step) > 20:
+                print(f"  [WARNING] Potential collision likely with {closest_name}! (dist: {min_dist:.1f}m)")
+                self.last_warning_step = self.step_count
+            elif min_dist < 0.0 and (self.step_count - self.last_warning_step) > 20:
+                print(f"  [CRITICAL] Drone is INSIDE building {closest_name}!")
+                self.last_warning_step = self.step_count
+
+            # Periodic console debug log
+            if self.step_count % self.log_interval == 0:
+                cur_after = list(self.uav_tf.getSFVec3f())
+                self._log_status(cur_after, dist_to_target, closest_name, min_dist)
+
+            return True
+
+        # ── STATE: ARRIVED ───────────────────────────────────────────
+        if self.state == self.STATE_ARRIVED:
+            if not self.arrived_reported:
+                cur = list(self.uav_tf.getSFVec3f())
+                print("\n" + "=" * 64)
+                print("  ✓ MISSION COMPLETE — UAV_0 ARRIVED AT TARGET")
+                print(f"  Final position : ({cur[0]:.2f}, {cur[1]:.2f}, {cur[2]:.2f})")
+                print(f"  Target         : {self.target_pos}")
+                print(f"  Steps taken    : {self.step_count}")
+                print(f"  State          : ARRIVED (drone holding position)")
+                print("=" * 64 + "\n")
+                self.arrived_reported = True
+            # Hold position — reset physics every step so propellers
+            # don't push the drone away from the target (FIX-2).
+            self.uav_tf.setSFVec3f(self.target_pos)
+            try:
+                self.uav_node.resetPhysics()
+            except Exception:
+                pass
+            return True
+
+        return True  # fallback
+
+    def _check_collision_distance(self, pos):
+        """Returns (closest_building_name, surface_distance)."""
+        min_dist = 999.0
+        closest = None
+        for b in self.test_buildings:
+            dist = math.hypot(pos[0] - b["x"], pos[1] - b["y"])
+            surface_dist = dist - b["r"]
+            if surface_dist < min_dist:
+                min_dist = surface_dist
+                closest = b["name"]
+        return closest, min_dist
+
+    def _log_status(self, pos, dist_to_target, closest_bldg=None, bldg_dist=999.0):
+        """Console debug log shown every log_interval steps."""
+        print(f"\n[► Step {self.step_count:>6}]  State: {self.state}")
+        print(f"  UAV_0 position : ({pos[0]:7.2f}, {pos[1]:7.2f}, {pos[2]:5.2f}) m")
+        print(f"  Dist to target : {dist_to_target:7.2f} m")
+        print(f"  Altitude       : {pos[2]:5.2f} m  (target={self.altitude:.1f} m)")
+        if closest_bldg:
+            print(f"  [CollisionTest] Nearest obstacle ({closest_bldg}): {bldg_dist:.1f}m")
+        print(f"  Target         : ({self.target_pos[0]:.1f}, {self.target_pos[1]:.1f}, {self.target_pos[2]:.1f})")
+
+
+# ─────────────────────────────────────────────────────────────────────────────────
+
+
 # ── Camera mode presets ────────────────────────────────────────────────────────
 # position: [x, y, z]  |  orientation: [ax, ay, az, angle]
 # In ENU (Z-up), default Viewpoint orientation looks along -Z (straight down).
@@ -124,6 +436,8 @@ class MultiUAVSurveillance:
             sys.path.append(root_dir)
 
         self.rl_enabled = False
+        self.baseline_nav_enabled = False
+        self.baseline_nav_cfg = {}
         config_path = os.path.join(root_dir, "configs", "environment_config.yaml")
         if os.path.isfile(config_path):
             try:
@@ -131,6 +445,10 @@ class MultiUAVSurveillance:
                     _cfg = yaml.safe_load(f)
                 # Safely navigate rl.enabled — no manual text scanning
                 self.rl_enabled = bool(_cfg.get("rl", {}).get("enabled", False))
+                # Read single-drone baseline navigation config
+                _bn_cfg = _cfg.get("baseline_navigation", {})
+                self.baseline_nav_enabled = bool(_bn_cfg.get("enabled", False))
+                self.baseline_nav_cfg = _bn_cfg
             except Exception as e:
                 print(f"[WARN] Failed to parse config file: {e}")
 
@@ -143,6 +461,10 @@ class MultiUAVSurveillance:
             except Exception as e:
                 print(f"[ERROR] Failed to load Gymnasium environment: {e}")
                 self.rl_enabled = False
+
+        if self.baseline_nav_enabled:
+            print("[UAV Controller] Baseline navigation mode ENABLED "
+                  "(RL and patrol are inactive).")
 
     # ── Camera control ─────────────────────────────────────────────────────────
 
@@ -567,19 +889,34 @@ class MultiUAVSurveillance:
                 print(f"[ERROR] Trainer execution failed: {e}")
                 raise e
         else:
-            # Rule-based baseline patrol
-            while self.supervisor.step(self.timestep) != -1:
-                self.step_count += 1
-                self._handle_keyboard()      # camera mode switching (GUI only)
-                self.update_uavs()
-                if self.birds:
-                    self.update_birds()
-                self.log_metrics()
+            # ── Check for single-drone baseline navigation mode ─────────────────
+            if self.baseline_nav_enabled:
+                print("[UAV Controller] Starting Single-Drone Navigation Baseline...")
+                self._set_camera_mode(2)  # chase-cam follows UAV_0 — best for baseline
+                nav = SingleDroneNavigation(self, self.baseline_nav_cfg)
+                while self.supervisor.step(self.timestep) != -1:
+                    self.step_count += 1
+                    self._handle_keyboard()         # camera mode switching (GUI only)
+                    nav.step()                      # navigation state machine
 
-                # Periodic camera health check — recover from black-screen conditions
-                self._cam_health_counter += 1
-                if self._cam_health_counter % 500 == 0:
-                    self._validate_and_recover_camera()
+                    # Periodic camera health check
+                    self._cam_health_counter += 1
+                    if self._cam_health_counter % 500 == 0:
+                        self._validate_and_recover_camera()
+            else:
+                # Rule-based baseline patrol (original behaviour)
+                while self.supervisor.step(self.timestep) != -1:
+                    self.step_count += 1
+                    self._handle_keyboard()      # camera mode switching (GUI only)
+                    self.update_uavs()
+                    if self.birds:
+                        self.update_birds()
+                    self.log_metrics()
+
+                    # Periodic camera health check — recover from black-screen conditions
+                    self._cam_health_counter += 1
+                    if self._cam_health_counter % 500 == 0:
+                        self._validate_and_recover_camera()
 
 
 if __name__ == "__main__":
