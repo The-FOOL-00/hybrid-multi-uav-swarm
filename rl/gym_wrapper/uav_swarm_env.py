@@ -111,6 +111,9 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
         from rl.rewards.reward_functions import CompositeReward
         self.reward_fn = CompositeReward()
 
+        # Subprocess handle — initialized to None; only set if _launch_webots() is used
+        self._webots_proc = None
+
         # ── Observation space (flat, per-UAV concatenated) ────────────────
         # [x, y, z, nn_dist, obs_dist, crowd_dx, crowd_dy, coverage] × NUM_UAVS
         obs_dim = 8 * self.NUM_UAVS
@@ -130,14 +133,29 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
     def reset(self, seed=None, options=None):
         """
         Soft-resets all UAVs to their initial positions and orientations.
+        Also resets all controller-side state that could leak across episodes.
         Returns the initial observation and info dict.
         """
         if GYM_AVAILABLE:
             super().reset(seed=seed)
-        self._step_count = 0
-        self.controller.prev_targets = [None] * self.NUM_UAVS
 
-        # Teleport all UAVs back to start and reset physics
+        # ── Reset Gym-side step counter ───────────────────────────────────────
+        self._step_count = 0
+
+        # ── Reset controller-side state to prevent cross-episode leakage ──────
+        # prev_targets: resets patrol direction memory
+        self.controller.prev_targets = [None] * self.NUM_UAVS
+        # step_count: resets patrol phase angles so each episode starts identically
+        self.controller.step_count = 0
+        # coverage_log: prevent unbounded growth across episodes
+        self.controller.coverage_log = []
+        # _cam_health_counter: prevent timing drift across episodes
+        self.controller._cam_health_counter = 0
+        # Reset reward debug step tracker so logging fires at step 0 of new episode
+        from rl.rewards.reward_functions import CompositeReward
+        CompositeReward._last_debug_step = -1
+
+        # ── Teleport all UAVs back to start and reset physics ─────────────────
         for i, (tf, rf) in enumerate(zip(self.controller.uav_trans, self.controller.uav_rot)):
             tf.setSFVec3f(self.initial_translations[i])
             rf.setSFRotation(self.initial_rotations[i])
@@ -148,7 +166,7 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
 
         # Step once to apply changes in the physics engine
         self.supervisor.step(self.timestep)
-        
+
         # Read keyboard input immediately after step advances to refresh the queue
         if hasattr(self.controller, '_handle_keyboard'):
             self.controller._handle_keyboard()
@@ -236,14 +254,14 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
         uav_positions = []
         for tf in self.controller.uav_trans:
             uav_positions.append(list(tf.getSFVec3f()))
-            
+
         crowd_positions = []
         for node in self.controller.crowd_nodes:
             try:
                 crowd_positions.append(list(node.getPosition()))
             except Exception:
                 pass
-                
+
         # 1. Collision Termination Check (severe collision < 3.0m)
         is_collision = False
         for i in range(self.NUM_UAVS):
@@ -254,7 +272,7 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
                     break
             if is_collision:
                 break
-                
+
         # 1.5 Building Collision Check (severe collision < 8.0m to building center)
         is_building_collision = False
         for pos in uav_positions:
@@ -265,41 +283,23 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
                     break
             if is_building_collision:
                 break
-                
+
         # 2. Boundary Breach Check (absolute displacement > 90m)
         is_out_of_bounds = False
         for pos in uav_positions:
             if abs(pos[0]) > 90.0 or abs(pos[1]) > 90.0:
                 is_out_of_bounds = True
                 break
-                
-        # 3. Compute Composite Reward for the current step state
-        reward = self.reward_fn.compute(
-            uav_positions=uav_positions,
-            crowd_positions=crowd_positions,
-            step=self._step_count,
-            building_positions=self.building_positions
-        )
-        
-        # 4. Handle Proximity/Collision Penalties without early termination
-        # Drones never reset/teleport during flight; they slide off boundaries and obstacles,
-        # receive continuous negative rewards, and must learn to steer back into the safe zone.
-        terminated = False
-        if is_collision or is_building_collision:
-            reward += -50.0  # catastrophic proximity penalty
-            if self._step_count % 20 == 0:  # Rate-limit to prevent console clutter
-                print(f"\n💥 [Gym Safety Warning] Proximity violation detected! Steering back...")
-            
-        # 5. Horizon Truncation — 5000 steps × ~8ms = ~40s real sim time per episode
-        truncated = self._step_count >= self.MAX_STEPS
-        
-        # 6. Gather rich diagnostics for training logging
-        obs = self._get_observation()
-        
-        # Calculate current instantaneous coverage %
-        cov_percent = self.controller.compute_coverage()
-        
-        # Calculate Target Recognition Rate (TRR)
+
+        # 3. Pre-compute coverage and TRR BEFORE reward calculation.
+        #    Bug fix: these values were previously computed AFTER reward_fn.compute(),
+        #    meaning CoverageReward and TrackingReward always received 0.0.
+
+        # 3a. Coverage — normalized to [0.0, 1.0] for reward function
+        cov_percent = self.controller.compute_coverage()   # returns 0-100
+        coverage_norm = cov_percent / 100.0
+
+        # 3b. Target Recognition Rate (TRR) — normalized to [0.0, 1.0] for reward
         tracked = set()
         if crowd_positions:
             for ci, c_pos in enumerate(crowd_positions):
@@ -309,19 +309,53 @@ class UAVSwarmEnv(gym.Env if GYM_AVAILABLE else object):
                     if dist <= view_r:
                         tracked.add(ci)
                         break
-            trr = len(tracked) / len(crowd_positions) * 100.0
+            trr_norm = len(tracked) / len(crowd_positions)   # [0.0, 1.0]
+            trr_percent = trr_norm * 100.0
         else:
-            trr = 0.0
-            
+            trr_norm = 0.0
+            trr_percent = 0.0
+
+        # 4. Compute composite reward with per-component breakdown.
+        #    Pass coverage, trr, and building_positions so all components fire correctly.
+        #    CollisionPenalty will derive min_obs_dists internally from building_positions.
+        is_episode_end = (self._step_count >= self.MAX_STEPS - 1)
+        reward, reward_breakdown = self.reward_fn.compute_with_breakdown(
+            uav_positions=uav_positions,
+            crowd_positions=crowd_positions,
+            step=self._step_count,
+            log_debug=True,
+            episode_end=is_episode_end,
+            # ── Reward component inputs (FIXED) ──
+            coverage=coverage_norm,
+            trr=trr_norm,
+            building_positions=self.building_positions,
+        )
+
+        # 5. Handle severe proximity / collision — apply catastrophic penalty without
+        #    early termination so agents learn to steer away.
+        terminated = False
+        if is_collision or is_building_collision:
+            reward += -50.0  # catastrophic proximity penalty
+            reward_breakdown["collision_catastrophic"] = -50.0
+            if self._step_count % 20 == 0:  # Rate-limit to prevent console clutter
+                print(f"\n\U0001f4a5 [Gym Safety Warning] Proximity violation at step {self._step_count}! Steering back...")
+
+        # 6. Horizon Truncation — 5000 steps × ~8ms = ~40s real sim time per episode
+        truncated = self._step_count >= self.MAX_STEPS
+
+        # 7. Gather observation and build rich diagnostics info dict
+        obs = self._get_observation()
+
         info = {
             "step": self._step_count,
             "coverage": cov_percent,
-            "trr": trr,
+            "trr": trr_percent,
             "is_collision": int(is_collision or is_building_collision),
             "is_out_of_bounds": int(is_out_of_bounds),
-            "raw_reward": reward
+            "raw_reward": reward,
+            "reward_breakdown": reward_breakdown,
         }
-        
+
         return obs, reward, terminated, truncated, info
 
     def render(self):

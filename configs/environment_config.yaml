@@ -127,7 +127,7 @@ logging:
     - active_uavs
     - uav_positions
 
-# ── RL Training Parameters (future use) ─────────────────────────────────────
+# ── RL Training Parameters ───────────────────────────────────────────────
 rl:
   enabled: true               # set true when RL training is active
   algorithm: "PPO"             # planned: PPO, MAPPO
@@ -139,6 +139,8 @@ rl:
   learning_rate: 3.0e-4
   gamma: 0.99
   reward_weights:
-    coverage: 0.6
-    collision_penalty: -1.0
-    tracking: 0.4
+    coverage:          0.6    # CoverageReward weight   (positive)
+    tracking:          0.4    # TrackingReward weight   (positive)
+    collision_penalty: -1.0   # CollisionPenalty weight (negated in code via abs())
+    overlap_penalty:   0.3    # OverlapPenalty weight   (positive, penalty is negative)
+    separation_reward: 0.05   # SeparationReward weight (positive)

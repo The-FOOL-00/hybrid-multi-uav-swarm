@@ -12,6 +12,7 @@ from controller import Supervisor
 import math
 import random
 import os
+import yaml
 
 
 # ── Camera mode presets ────────────────────────────────────────────────────────
@@ -127,10 +128,9 @@ class MultiUAVSurveillance:
         if os.path.isfile(config_path):
             try:
                 with open(config_path, "r") as f:
-                    for line in f:
-                        if "enabled:" in line and "true" in line.lower():
-                            self.rl_enabled = True
-                            break
+                    _cfg = yaml.safe_load(f)
+                # Safely navigate rl.enabled — no manual text scanning
+                self.rl_enabled = bool(_cfg.get("rl", {}).get("enabled", False))
             except Exception as e:
                 print(f"[WARN] Failed to parse config file: {e}")
 

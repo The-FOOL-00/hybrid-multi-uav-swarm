@@ -136,6 +136,17 @@ class SwarmTrainingCallback(BaseCallback):
                 "steps_per_sec": round(steps_per_sec, 2),
                 "timestamp": ep_end_time
             }
+            
+            # Append per-component reward breakdown fields if available.
+            # Uses .get() throughout — safe if reward_breakdown is absent (backward compat).
+            breakdown = info.get("reward_breakdown", {})
+            if breakdown:
+                # Log each component to TensorBoard
+                for comp_key, comp_val in breakdown.items():
+                    self.logger.record(f"reward/{comp_key}", float(comp_val))
+                # Append to JSON record (prefixed with reward_ to avoid collisions)
+                for comp_key, comp_val in breakdown.items():
+                    record[f"reward_{comp_key}"] = round(float(comp_val), 5)
             self.metrics_history.append(record)
             metrics_path = os.path.join(self.metrics_dir, "metrics.json")
             try:
