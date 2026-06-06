@@ -35,6 +35,19 @@ scenarios:
     birds: 8
     area_m2: 40000
 
+  single_drone:
+    world_file: "worlds/single_drone_downtown.wbt"
+    description: "[DEV] Single-drone nav+avoidance dev world — identical downtown minus UAV_1-4"
+    buildings: 15
+    crowd_agents: 15
+    uav_count: 1               # UAV_0 only; UAV_1-4 removed from world file
+    patrol_altitude: 15.0
+    patrol_radius: 45.0
+    birds: 8
+    area_m2: 40000
+    mission_start:  [-40.0, 48.0, 15.0]
+    mission_target: [ 50.0, 48.0, 15.0]
+
   event:
     world_file: "worlds/event.wbt"
     description: "Dense crowd gathering in central 50x50m plaza"
@@ -140,6 +153,27 @@ baseline_navigation:
   arrival_radius: 3.0          # metres — declare ARRIVED when dist < this
   altitude: 15.0               # m  — constant cruise altitude
   log_interval_steps: 100      # console log every N steps
+  safety_radius: 5.0           # distance from obstacle surface to begin avoidance
+  avoidance_strength: 1.5      # multiplier for obstacle repulsion vector
+  target_strength: 1.0         # multiplier for target attraction vector
+
+  # ── A* Global Path Planner ────────────────────────────────────────────
+  astar_enabled: true          # false = fall back to reactive avoidance only
+  grid_resolution: 2.0         # metres per grid cell  (smaller = finer, slower)
+  grid_margin: 90.0            # half-width of grid world (cells from -90 to +90 m)
+  obstacle_inflation: 2.0      # extra metres added to building radii when marking cells
+  waypoint_radius: 4.0         # metres — advance to next waypoint when dist < this
+  show_waypoint_markers: true  # spawn visual debug Solid spheres in Webots
+
+  # ── Kinematic Flight Model ───────────────────────────────────────────
+  # Bridge between teleport and full physics — velocity+acceleration model.
+  # DO NOT enable motor thrust or PID yet.
+  max_velocity:     0.5      # m/step  — absolute speed cap
+  cruise_velocity:  0.3      # m/step  — nominal cruise speed (overrides cruise_speed)
+  max_acceleration: 0.05     # m/step² — acceleration AND deceleration cap
+  max_turn_rate:    0.08     # rad/step — maximum yaw rotation per step
+  decel_radius:     8.0      # m       — start decelerating this many metres before WP
+
 
 rl:
   enabled: false              # TEMPORARILY DISABLED for single-drone baseline
