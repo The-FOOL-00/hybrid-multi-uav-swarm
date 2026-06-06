@@ -5,14 +5,289 @@ Coordinate system: ENU (East=X, North=Y, Up=Z)
 
 Camera modes (keyboard keys 1 / 2 / 3 in GUI mode):
   1 - Cinematic city view  : fixed SE-corner position, pans to track UAV_0
-  2 - Tracking shot        : chase-cam follows UAV_0 from behind
+  2 - Improved chase-cam   : smooth manual interpolated follow (custom override)
   3 - Top-down overview    : bird's-eye view, all 5 drones visible
+
+Debug/Observability features (active in baseline_nav mode):
+  - Cyan beacon sphere hovering +4 m above UAV_0 for easy visual tracking
+  - Smooth custom chase-cam (mode 2) with configurable offset + lerp
+  - Blue dot path trail showing actual flown route
+  - Improved waypoint markers (larger, emissive, numbered)
+  - Formatted debug HUD printed every log_interval steps
+  - ASCII minimap printed every 200 steps
 """
 from controller import Supervisor
 import math
+import heapq
 import random
 import os
 import yaml
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# A* GLOBAL PATH PLANNER
+# ══════════════════════════════════════════════════════════════════════════════
+class AStarPlanner:
+    """
+    Lightweight 2-D A* path planner on a uniform occupancy grid.
+
+    Coordinate mapping
+    ------------------
+    World XY → grid (col, row):
+        col = int((x + grid_margin) / resolution)
+        row = int((y + grid_margin) / resolution)
+
+    Grid dimensions (cells):
+        width  = height = ceil(2 * grid_margin / resolution) + 1
+
+    Buildings are inflated by `obstacle_inflation` metres before rasterisation
+    so the drone centre never gets closer than that margin to any wall.
+
+    The planner returns a list of world-space (x, y) waypoints extracted from
+    the cell path.  The caller adds the mission altitude (z) before use.
+
+    Algorithm
+    ---------
+    Standard A* with:
+        g(n) = actual cost from start (Euclidean distance between adjacent cells)
+        h(n) = Euclidean distance to goal cell (admissible heuristic)
+        8-connected neighbours (allows diagonal moves)
+
+    Path smoothing
+    --------------
+    After raw cell extraction a simple greedy line-of-sight pass removes
+    redundant intermediate waypoints: if the segment (wA → wC) is free of
+    obstacles, waypoint wB is dropped.
+    """
+
+    def __init__(self, buildings: list, resolution: float = 2.0,
+                 grid_margin: float = 90.0, obstacle_inflation: float = 2.0):
+        """
+        Parameters
+        ----------
+        buildings : list of dict
+            Each dict must have keys ``x``, ``y``, ``r`` (world coords + radius).
+        resolution : float
+            Grid cell size in metres.
+        grid_margin : float
+            World extends from (-grid_margin) to (+grid_margin) on both axes.
+        obstacle_inflation : float
+            Extra metres added to every building radius before grid marking.
+        """
+        self.resolution = resolution
+        self.grid_margin = grid_margin
+        self.inflation = obstacle_inflation
+        self.buildings = buildings
+
+        # Grid dimensions
+        span = 2.0 * grid_margin
+        self.cols = int(math.ceil(span / resolution)) + 1
+        self.rows = self.cols   # square world
+
+        # Build the occupancy grid (True = blocked)
+        self.grid = self._build_grid()
+
+        total_cells = self.cols * self.rows
+        blocked = sum(1 for r in range(self.rows)
+                      for c in range(self.cols) if self.grid[r][c])
+        print(f"[A*] Grid built: {self.cols}x{self.rows} cells "
+              f"({resolution}m/cell) | {blocked}/{total_cells} blocked "
+              f"| world +/-{grid_margin}m")
+
+    # ── Grid construction ───────────────────────────────────────────────────
+
+    def _build_grid(self) -> list:
+        """Return a 2-D list[row][col] of booleans (True = obstacle)."""
+        grid = [[False] * self.cols for _ in range(self.rows)]
+        inflated_buildings = [
+            {"x": b["x"], "y": b["y"], "r": b["r"] + self.inflation}
+            for b in self.buildings
+        ]
+        for row in range(self.rows):
+            wy = row * self.resolution - self.grid_margin
+            for col in range(self.cols):
+                wx = col * self.resolution - self.grid_margin
+                for b in inflated_buildings:
+                    dist = math.hypot(wx - b["x"], wy - b["y"])
+                    if dist <= b["r"]:
+                        grid[row][col] = True
+                        break   # no need to check further buildings
+        return grid
+
+    # ── Coordinate helpers ──────────────────────────────────────────────────
+
+    def _world_to_cell(self, wx: float, wy: float):
+        col = int((wx + self.grid_margin) / self.resolution)
+        row = int((wy + self.grid_margin) / self.resolution)
+        col = max(0, min(self.cols - 1, col))
+        row = max(0, min(self.rows - 1, row))
+        return col, row
+
+    def _cell_to_world(self, col: int, row: int):
+        wx = col * self.resolution - self.grid_margin
+        wy = row * self.resolution - self.grid_margin
+        return wx, wy
+
+    def _in_bounds(self, col: int, row: int) -> bool:
+        return 0 <= col < self.cols and 0 <= row < self.rows
+
+    def _is_free(self, col: int, row: int) -> bool:
+        return self._in_bounds(col, row) and not self.grid[row][col]
+
+    # ── A* core ────────────────────────────────────────────────────────────
+
+    def _heuristic(self, col: int, row: int, gc: int, gr: int) -> float:
+        """Euclidean distance heuristic (in cell units)."""
+        return math.hypot(col - gc, row - gr)
+
+    def _reconstruct(self, came_from: dict, current) -> list:
+        """Walk back the came_from dict to build the cell path."""
+        path = []
+        while current is not None:
+            path.append(current)
+            current = came_from.get(current)
+        path.reverse()
+        return path
+
+    def plan(self, start_world, goal_world) -> list:
+        """
+        Run A* from start_world (x,y) to goal_world (x,y).
+
+        Returns
+        -------
+        list of (x, y) world coordinates, including goal but NOT start.
+        Returns empty list if no path found (caller falls back to straight line).
+        """
+        sc, sr = self._world_to_cell(*start_world)
+        gc, gr = self._world_to_cell(*goal_world)
+
+        # Snap start/goal to nearest free cell if they landed inside an obstacle
+        sc, sr = self._nearest_free(sc, sr)
+        gc, gr = self._nearest_free(gc, gr)
+
+        if (sc, sr) == (gc, gr):
+            return [goal_world]
+
+        # Priority queue: (f_cost, g_cost, col, row)
+        open_heap = []
+        heapq.heappush(open_heap, (0.0, 0.0, sc, sr))
+
+        came_from = {(sc, sr): None}
+        g_cost    = {(sc, sr): 0.0}
+
+        # 8-connected neighbours (dx, dy) with move cost
+        NEIGHBOURS = [
+            (-1, -1, 1.4142), (-1, 0, 1.0), (-1, 1, 1.4142),
+            ( 0, -1, 1.0),                   ( 0, 1, 1.0),
+            ( 1, -1, 1.4142), ( 1, 0, 1.0), ( 1, 1, 1.4142),
+        ]
+
+        closed = set()
+
+        while open_heap:
+            _, g, col, row = heapq.heappop(open_heap)
+            node = (col, row)
+
+            if node in closed:
+                continue
+            closed.add(node)
+
+            if node == (gc, gr):
+                cell_path = self._reconstruct(came_from, (gc, gr))
+                world_path = [self._cell_to_world(c, r) for c, r in cell_path]
+                # Remove start position (index 0), keep the rest incl. goal
+                world_path = world_path[1:]
+                # Replace last waypoint with exact goal coordinates
+                if world_path:
+                    world_path[-1] = goal_world
+                world_path = self._smooth(world_path)
+                print(f"[A*] Path found: {len(world_path)} waypoints "
+                      f"(raw cell path: {len(cell_path)} cells)")
+                return world_path
+
+            for dc, dr, move_cost in NEIGHBOURS:
+                nc, nr = col + dc, row + dr
+                if not self._is_free(nc, nr):
+                    continue
+                neighbour = (nc, nr)
+                new_g = g + move_cost
+                if new_g < g_cost.get(neighbour, float("inf")):
+                    g_cost[neighbour] = new_g
+                    f = new_g + self._heuristic(nc, nr, gc, gr)
+                    heapq.heappush(open_heap, (f, new_g, nc, nr))
+                    came_from[neighbour] = node
+
+        print("[A*] WARNING: No path found — falling back to straight line")
+        return []
+
+    # ── Path smoothing ──────────────────────────────────────────────────────
+
+    def _los_clear(self, ax: float, ay: float, bx: float, by: float,
+                   samples: int = 20) -> bool:
+        """
+        Check if the straight segment (ax,ay)→(bx,by) is free of obstacles.
+        Uses point-sampling along the segment.
+        """
+        for i in range(samples + 1):
+            t = i / samples
+            wx = ax + t * (bx - ax)
+            wy = ay + t * (by - ay)
+            col, row = self._world_to_cell(wx, wy)
+            if not self._is_free(col, row):
+                return False
+        return True
+
+    def _smooth(self, waypoints: list) -> list:
+        """
+        Greedy line-of-sight waypoint smoother.
+        Removes intermediate waypoints that are visible from the previous one.
+        """
+        if len(waypoints) <= 2:
+            return waypoints
+
+        smoothed = [waypoints[0]]
+        i = 0
+        while i < len(waypoints) - 1:
+            # Find the furthest visible waypoint from smoothed[-1]
+            j = len(waypoints) - 1
+            while j > i + 1:
+                ax, ay = smoothed[-1]
+                bx, by = waypoints[j]
+                if self._los_clear(ax, ay, bx, by):
+                    break
+                j -= 1
+            smoothed.append(waypoints[j])
+            i = j
+
+        print(f"[A*] Smoothed: {len(waypoints)} -> {len(smoothed)} waypoints")
+        return smoothed
+
+    # ── Nearest-free helper ─────────────────────────────────────────────────
+
+    def _nearest_free(self, col: int, row: int, max_search: int = 10):
+        """BFS outward to find the closest free cell from a blocked one."""
+        if self._is_free(col, row):
+            return col, row
+        visited = set()
+        queue = [(col, row)]
+        visited.add((col, row))
+        while queue:
+            next_queue = []
+            for c, r in queue:
+                for dc in range(-1, 2):
+                    for dr in range(-1, 2):
+                        nc, nr = c + dc, r + dr
+                        if (nc, nr) in visited:
+                            continue
+                        visited.add((nc, nr))
+                        if self._is_free(nc, nr):
+                            return nc, nr
+                        next_queue.append((nc, nr))
+            queue = next_queue
+            if len(visited) > (2 * max_search + 1) ** 2:
+                break
+        return col, row   # give up — return original
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -22,18 +297,16 @@ import yaml
 # ────────────────────────────────────────────────────────────────────────────────
 class SingleDroneNavigation:
     """
-    Simple deterministic waypoint navigation for UAV_0.
+    Deterministic waypoint navigation for UAV_0 with optional A* global planner.
 
     Algorithm:
         1. TAKEOFF  — teleport UAV_0 to start_position.
-        2. NAVIGATE — each step compute:
-               direction = normalize(target - current)
-               new_pos   = current + direction * speed
-               new_pos.z = altitude  # lock altitude
-           Move drone there via setSFVec3f (supervisor teleport, same as
-           the existing patrol mode — no physics engine involvement).
+        2. NAVIGATE — if A* enabled: follow planned waypoint list.
+                      otherwise: steer straight toward target.
+                      Each step applies local obstacle repulsion on top
+                      of the waypoint steering vector.
         3. ARRIVED  — once dist_to_target < arrival_radius, stop moving
-           and announce mission complete.
+                      and announce mission complete.
 
     UAV_1-4 are parked at their initial positions and never updated.
     RL and random patrol are NOT used in this mode.
@@ -62,13 +335,38 @@ class SingleDroneNavigation:
         tgt   = cfg.get("target_position", [40.0, -15.0, 15.0])
         self.start_pos     = list(start)
         self.target_pos    = list(tgt)
-        # FIX-1: speed reduced to 0.3 m/step for smooth visual motion.
-        # At 8ms/step this equals 37.5 m/s supervisor-teleport velocity.
-        # Mission distance ≈85.4m → ~285 visible steps across the city.
-        self.cruise_speed  = float(cfg.get("cruise_speed", 0.3))
+        self.cruise_speed  = float(cfg.get("cruise_speed", 0.3))  # legacy; overridden by cruise_velocity
         self.arrival_radius= float(cfg.get("arrival_radius", 3.0))
         self.altitude      = float(cfg.get("altitude", 15.0))
         self.log_interval  = int(cfg.get("log_interval_steps", 100))
+
+        self.safety_radius      = float(cfg.get("safety_radius", 5.0))
+        self.avoidance_strength = float(cfg.get("avoidance_strength", 1.5))
+        self.target_strength    = float(cfg.get("target_strength", 1.0))
+
+        # ── Kinematic flight model state ──────────────────────────────────────
+        # Velocity (m/step) in ENU frame — integrated each step.
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
+        # Current heading (radians, ENU yaw from East axis).
+        self.current_yaw = 0.0
+
+        # Kinematic parameters — read from YAML with safe defaults.
+        self.max_velocity     = float(cfg.get("max_velocity",     0.5))
+        self.cruise_velocity  = float(cfg.get("cruise_velocity",  self.cruise_speed))
+        self.max_acceleration = float(cfg.get("max_acceleration", 0.05))
+        self.max_turn_rate    = float(cfg.get("max_turn_rate",    0.08))  # rad/step
+        self.decel_radius     = float(cfg.get("decel_radius",     8.0))   # m
+
+        # ── HUD telemetry (populated each kinematic step) ─────────────────────
+        self.last_avoiding    = False
+        self.last_steer_vec   = (0.0, 0.0)
+        self.last_velocity    = (0.0, 0.0)   # (vx, vy) for HUD
+        self.last_speed       = 0.0          # |v_xy| m/step
+        self.last_accel       = (0.0, 0.0)   # (ax, ay) applied this step
+        self.last_accel_mag   = 0.0
+        self.last_turn_rate   = 0.0          # rad/step applied this step
 
         # UAV_0 node references (index 0 in parent lists)
         if len(parent.uav_trans) == 0:
@@ -90,6 +388,50 @@ class SingleDroneNavigation:
             {"name": "office_nw1", "x": -26.0, "y": 60.0, "r": 11.0}
         ]
         self.last_warning_step = -999
+
+        # ── A* planner setup ──────────────────────────────────────────────
+        self.astar_enabled   = bool(cfg.get("astar_enabled", True))
+        self.grid_resolution = float(cfg.get("grid_resolution", 2.0))
+        self.grid_margin     = float(cfg.get("grid_margin", 90.0))
+        self.obstacle_inflation = float(cfg.get("obstacle_inflation", 2.0))
+        self.waypoint_radius = float(cfg.get("waypoint_radius", 4.0))
+        self.show_wp_markers = bool(cfg.get("show_waypoint_markers", True))
+
+        # Waypoint list — populated during first NAVIGATE step via _init_astar()
+        self.waypoints          = []   # list of [x, y, z]
+        self.current_wp_idx     = 0
+        self.astar_initialized  = False
+        self._marker_nodes      = []   # Webots Solid nodes for visual debug
+
+        # ══════════════════════════════════════════════════════════════════
+        # DEBUG / OBSERVABILITY STATE  (Tasks 1–6)
+        # ══════════════════════════════════════════════════════════════════
+        self.debug_mode = True          # master switch for all debug visuals
+
+        # Task 1 — debug beacon above UAV_0
+        self._beacon_node = None        # Webots Solid node reference
+        self._beacon_tf   = None        # translation field of beacon node
+        self._beacon_offset_z = 4.0     # metres above drone centre
+
+        # Task 2 — smooth chase camera (active when cam_mode == 2)
+        # Offset vector in drone heading frame: behind=−ve heading, up=positive Z
+        self._chase_behind_dist = 14.0  # m behind drone
+        self._chase_above_dist  = 7.0   # m above drone
+        self._chase_lookahead   = 4.0   # m ahead of drone for look-at target
+        self._chase_lerp_alpha  = 0.07  # smoothing factor (0=frozen, 1=instant)
+        self._cam_smooth_pos    = None  # smoothed viewpoint position [x,y,z]
+        self._cam_smooth_target = None  # smoothed look-at point [x,y,z]
+
+        # Task 3 — persistent path trail (blue dots)
+        self._trail_positions   = []    # sampled drone positions
+        self._trail_nodes       = []    # spawned Webots Solid nodes
+        self._trail_counter     = 0     # steps since last sample
+        self._trail_interval    = 10    # sample every N steps
+        self._trail_max_nodes   = 600   # cap on spawned nodes
+        self._trail_radius      = 0.35  # sphere radius (metres)
+
+        # Task 6 — ASCII minimap
+        self._minimap_interval  = 200   # print minimap every N steps
 
         # Park UAV_1-4 at their initial positions so they don't drift
         self._park_inactive_uavs()
@@ -142,17 +484,35 @@ class SingleDroneNavigation:
                     pass
 
     def _print_banner(self):
+        astar_mode = "A* + Local Avoidance" if self.astar_enabled else "Reactive avoidance only"
         print("\n" + "=" * 64)
         print("  SINGLE DRONE NAVIGATION BASELINE  (Phase 1)")
         print("  NO RL  |  NO RANDOM PATROL  |  NO SWARM")
+        print("  MOTION: KINEMATIC FLIGHT MODEL  (velocity + acceleration)")
         print("  -" * 32)
-        print(f"  Active drone : UAV_0")
-        print(f"  Start        : {self.start_pos}")
-        print(f"  Target       : {self.target_pos}")
-        print(f"  Altitude     : {self.altitude} m (constant)")
-        print(f"  Speed        : {self.cruise_speed} m/step")
-        print(f"  Arrival zone : {self.arrival_radius} m radius")
-        print("  States       : TAKEOFF → NAVIGATE → ARRIVED")
+        print(f"  Active drone    : UAV_0")
+        print(f"  Start           : {self.start_pos}")
+        print(f"  Target          : {self.target_pos}")
+        print(f"  Altitude        : {self.altitude} m (kinematic Z hold)")
+        print(f"  Cruise velocity : {self.cruise_velocity} m/step")
+        print(f"  Max velocity    : {self.max_velocity} m/step")
+        print(f"  Max accel       : {self.max_acceleration} m/step\u00b2")
+        print(f"  Max turn rate   : {math.degrees(self.max_turn_rate):.1f} deg/step")
+        print(f"  Decel radius    : {self.decel_radius} m before WP")
+        print(f"  Arrival zone    : {self.arrival_radius} m radius")
+        print(f"  Planner         : {astar_mode}")
+        if self.astar_enabled:
+            print(f"  Grid res        : {self.grid_resolution} m/cell")
+            print(f"  WP radius       : {self.waypoint_radius} m")
+        print("  States       : TAKEOFF \u2192 NAVIGATE \u2192 ARRIVED")
+        print("  -" * 32)
+        print("  DEBUG FEATURES ACTIVE:")
+        print("    [T1] Cyan beacon sphere  (+4 m above UAV_0)")
+        print("    [T2] Smooth chase-cam    (key 2 to activate)")
+        print("    [T3] Blue path trail     (every 10 steps)")
+        print("    [T4] Improved WP markers (larger, emissive)")
+        print("    [T5] Full debug HUD      (every 100 steps, speed/accel/yaw)")
+        print("    [T6] ASCII minimap       (every 200 steps)")
         print("=" * 64 + "\n")
 
     # ── Navigation logic ─────────────────────────────────────────────────
@@ -166,44 +526,424 @@ class SingleDroneNavigation:
         """Horizontal distance (XY plane only)."""
         return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
 
+    def _init_astar(self):
+        """
+        Run A* once (on first NAVIGATE step) to generate the waypoint list.
+        Called lazily so the Webots scene is fully loaded before we query it.
+        """
+        print("\n[A*] Initialising path planner...")
+        planner = AStarPlanner(
+            buildings        = self.test_buildings,
+            resolution       = self.grid_resolution,
+            grid_margin      = self.grid_margin,
+            obstacle_inflation = self.obstacle_inflation,
+        )
+        start_xy = (self.start_pos[0], self.start_pos[1])
+        goal_xy  = (self.target_pos[0], self.target_pos[1])
+        raw_wps  = planner.plan(start_xy, goal_xy)
+
+        if not raw_wps:
+            # A* failed — fall back to single waypoint (straight line)
+            print("[A*] Falling back to direct straight-line navigation.")
+            raw_wps = [goal_xy]
+
+        # Convert (x, y) → [x, y, z] with mission altitude
+        self.waypoints = [[wx, wy, self.altitude] for wx, wy in raw_wps]
+        self.current_wp_idx = 0
+
+        print(f"[A*] Waypoint plan ({len(self.waypoints)} waypoints):")
+        for i, wp in enumerate(self.waypoints):
+            marker = " <- FINAL TARGET" if i == len(self.waypoints) - 1 else ""
+            print(f"  WP[{i:02d}] ({wp[0]:7.2f}, {wp[1]:7.2f}, {wp[2]:.1f}){marker}")
+        print()
+
+        # Spawn visual markers if requested
+        if self.show_wp_markers:
+            self._spawn_waypoint_markers()
+
+        # Spawn debug beacon above drone (Task 1)
+        if self.debug_mode:
+            self._spawn_debug_beacon()
+
+        self.astar_initialized = True
+
+    def _spawn_waypoint_markers(self):
+        """
+        Spawn improved waypoint markers (Task 4):
+          - Bigger spheres (radius 1.5 vs 1.0)
+          - Bright yellow intermediate, bright green final
+          - Strong emissive glow so markers are visible from far away
+          - Floated +1 m above the waypoint altitude
+          - Numbered console printout per waypoint
+        Uses supervisor importMFNodeFromString — gracefully skips on any error.
+        """
+        print("[WP Markers] Spawning improved waypoint markers:")
+        try:
+            root = self.supervisor.getRoot()
+            children_field = root.getField("children")
+            total = len(self.waypoints)
+            for i, wp in enumerate(self.waypoints):
+                is_final = (i == total - 1)
+                if is_final:
+                    # Bright green — final target
+                    r, g, b  = 0.0, 1.0, 0.15
+                    er, eg, eb = 0.0, 0.85, 0.1
+                    label = "FINAL TARGET"
+                else:
+                    # Bright yellow — intermediate waypoint
+                    r, g, b  = 1.0, 1.0, 0.0
+                    er, eg, eb = 0.9, 0.9, 0.0
+                    label = "intermediate"
+
+                # Float marker +1 m above its waypoint altitude
+                marker_z = wp[2] + 1.0
+
+                node_str = (
+                    f'DEF ASTAR_WP_{i} Solid {{\n'
+                    f'  translation {wp[0]} {wp[1]} {marker_z}\n'
+                    f'  children [\n'
+                    f'    Shape {{\n'
+                    f'      appearance Appearance {{\n'
+                    f'        material Material {{\n'
+                    f'          diffuseColor {r} {g} {b}\n'
+                    f'          emissiveColor {er} {eg} {eb}\n'
+                    f'          shininess 0.9\n'
+                    f'        }}\n'
+                    f'      }}\n'
+                    f'      geometry Sphere {{ radius 1.5 }}\n'
+                    f'    }}\n'
+                    f'  ]\n'
+                    f'  name "astar_wp_{i}"\n'
+                    f'  contactMaterial "default"\n'
+                    f'  physics NULL\n'
+                    f'}}\n'
+                )
+                children_field.importMFNodeFromString(-1, node_str)
+                # Numbered debug print (Task 4 requirement)
+                print(f"  WP[{i}]  ({wp[0]:7.2f}, {wp[1]:7.2f}, {wp[2]:.1f})  "
+                      f"[{label}]")
+
+            print(f"[WP Markers] {total} markers spawned  "
+                  f"(yellow=intermediate, green=final).")
+        except Exception as e:
+            print(f"[WP Markers] Not spawned (non-fatal): {e}")
+
+    # ── Task 1: Debug Beacon ───────────────────────────────────────────────
+
+    def _spawn_debug_beacon(self):
+        """
+        Spawn a bright cyan emissive sphere above UAV_0 start position.
+        The beacon is non-physical (physics NULL) so it cannot collide with anything.
+        Its position is updated every step in _update_debug_beacon().
+        """
+        try:
+            start = self.start_pos
+            beacon_x = start[0]
+            beacon_y = start[1]
+            beacon_z = start[2] + self._beacon_offset_z
+
+            node_str = (
+                f'DEF DEBUG_BEACON Solid {{\n'
+                f'  translation {beacon_x} {beacon_y} {beacon_z}\n'
+                f'  children [\n'
+                f'    Shape {{\n'
+                f'      appearance Appearance {{\n'
+                f'        material Material {{\n'
+                f'          diffuseColor 0.0 1.0 1.0\n'
+                f'          emissiveColor 0.0 0.9 0.9\n'
+                f'          shininess 1.0\n'
+                f'          transparency 0.0\n'
+                f'        }}\n'
+                f'      }}\n'
+                f'      geometry Sphere {{ radius 1.5 }}\n'
+                f'    }}\n'
+                f'  ]\n'
+                f'  name "debug_beacon"\n'
+                f'  contactMaterial "default"\n'
+                f'  physics NULL\n'
+                f'}}\n'
+            )
+            root = self.supervisor.getRoot()
+            children_field = root.getField("children")
+            children_field.importMFNodeFromString(-1, node_str)
+
+            # Cache the node and its translation field for fast per-step updates
+            self._beacon_node = self.supervisor.getFromDef("DEBUG_BEACON")
+            if self._beacon_node is not None:
+                self._beacon_tf = self._beacon_node.getField("translation")
+                print("[Debug Beacon] Cyan beacon spawned above UAV_0 "
+                      f"(offset +{self._beacon_offset_z}m).")
+            else:
+                print("[Debug Beacon] WARNING: node not found after spawn.")
+        except Exception as e:
+            print(f"[Debug Beacon] Not spawned (non-fatal): {e}")
+
+    def _update_debug_beacon(self, drone_pos):
+        """
+        Called every step to keep the beacon hovering above UAV_0.
+        Uses setSFVec3f for minimal overhead.
+        """
+        if self._beacon_tf is None:
+            return
+        try:
+            self._beacon_tf.setSFVec3f([
+                drone_pos[0],
+                drone_pos[1],
+                drone_pos[2] + self._beacon_offset_z
+            ])
+        except Exception:
+            pass
+
+    # ── Task 3: Persistent Path Trail ─────────────────────────────────────
+
+    def _update_path_trail(self, drone_pos):
+        """
+        Accumulate small blue spheres to show the actual flown path.
+        Samples every _trail_interval steps. Caps at _trail_max_nodes.
+        Older nodes are NOT removed (they form the persistent trail).
+        """
+        self._trail_counter += 1
+        if self._trail_counter < self._trail_interval:
+            return
+        self._trail_counter = 0
+
+        # Cap node count to avoid memory bloat
+        if len(self._trail_nodes) >= self._trail_max_nodes:
+            return
+
+        idx = len(self._trail_nodes)
+        x, y, z = drone_pos[0], drone_pos[1], drone_pos[2]
+
+        node_str = (
+            f'DEF TRAIL_{idx} Solid {{\n'
+            f'  translation {x} {y} {z}\n'
+            f'  children [\n'
+            f'    Shape {{\n'
+            f'      appearance Appearance {{\n'
+            f'        material Material {{\n'
+            f'          diffuseColor 0.0 0.4 1.0\n'
+            f'          emissiveColor 0.0 0.35 0.9\n'
+            f'          shininess 0.7\n'
+            f'        }}\n'
+            f'      }}\n'
+            f'      geometry Sphere {{ radius {self._trail_radius} }}\n'
+            f'    }}\n'
+            f'  ]\n'
+            f'  name "trail_{idx}"\n'
+            f'  contactMaterial "default"\n'
+            f'  physics NULL\n'
+            f'}}\n'
+        )
+        try:
+            root = self.supervisor.getRoot()
+            children_field = root.getField("children")
+            children_field.importMFNodeFromString(-1, node_str)
+            self._trail_nodes.append(idx)   # just store count
+        except Exception:
+            pass   # trail spawn failure is silent — never block simulation
+
+    # ── Task 6: ASCII Minimap ─────────────────────────────────────────────
+
+    def _print_minimap(self, drone_pos):
+        """
+        Lightweight ASCII minimap printed to console every _minimap_interval steps.
+        Grid: 21 cols × 10 rows representing the ±90m world.
+        Symbols:  D=drone  T=target  B=building  W=waypoint  .=open space
+        """
+        COLS = 21
+        ROWS = 10
+        WORLD = 90.0   # half-width
+
+        def to_grid(wx, wy):
+            c = int((wx + WORLD) / (2.0 * WORLD) * (COLS - 1))
+            r = int((1.0 - (wy + WORLD) / (2.0 * WORLD)) * (ROWS - 1))
+            c = max(0, min(COLS - 1, c))
+            r = max(0, min(ROWS - 1, r))
+            return c, r
+
+        grid = [['·'] * COLS for _ in range(ROWS)]
+
+        # Mark buildings
+        for b in self.test_buildings:
+            c, r = to_grid(b["x"], b["y"])
+            grid[r][c] = 'B'
+
+        # Mark A* waypoints
+        for i, wp in enumerate(self.waypoints):
+            c, r = to_grid(wp[0], wp[1])
+            if grid[r][c] not in ('D', 'T'):
+                grid[r][c] = 'W'
+
+        # Mark target
+        tc, tr = to_grid(self.target_pos[0], self.target_pos[1])
+        grid[tr][tc] = 'T'
+
+        # Mark drone (overrides everything)
+        dc, dr = to_grid(drone_pos[0], drone_pos[1])
+        grid[dr][dc] = 'D'
+
+        # Render
+        sep = '─' * (COLS * 2 + 1)
+        print(f"\n┌{sep}┐")
+        for row in grid:
+            print('│ ' + ' '.join(row) + ' │')
+        print(f"└{sep}┘")
+        wp_idx = self.current_wp_idx + 1 if self.waypoints else 0
+        total_wp = len(self.waypoints)
+        print(f"  ASCII Minimap │ D=drone  T=target  B=building  W=waypoint  "
+              f"WP={wp_idx}/{total_wp}  "
+              f"pos=({drone_pos[0]:.0f},{drone_pos[1]:.0f})")
+        print()
+
     def _move_toward_target(self):
         """
-        Compute one step of vector steering.
+        KINEMATIC FLIGHT MODEL — replaces the old instant supervisor-teleport step.
 
-        direction = normalize(target_xy - current_xy)
-        new_xy    = current_xy + direction * cruise_speed
-        new_z     = altitude  (altitude lock — no climbing/falling)
+        Algorithm (per step):
+          1. Select steering target (current A* waypoint or final target).
+          2. Compute desired heading angle toward target.
+          3. Blend in obstacle repulsion to deflect desired heading.
+          4. Rotate current_yaw toward desired yaw by at most max_turn_rate.
+          5. Compute desired speed (cruise or decel ramp near waypoint).
+          6. Compute desired vx/vy from heading + speed.
+          7. Accelerate vx/vy toward desired by at most max_acceleration.
+          8. Integrate position: x += vx, y += vy.
+          9. Z kinematic: gently drive vz toward (altitude - z) and integrate.
 
-        Returns the new [x, y, z] position.
+        Stores telemetry in self.last_* for HUD display.
+        Returns the new [x, y, z] position (same interface as before).
         """
         cur = list(self.uav_tf.getSFVec3f())
-        tx, ty = self.target_pos[0], self.target_pos[1]
+
+        # ── 1. Select steering target (A* waypoint or final target) ───────
+        if self.astar_enabled and self.waypoints:
+            wp = self.waypoints[self.current_wp_idx]
+            tx, ty = wp[0], wp[1]
+        else:
+            tx, ty = self.target_pos[0], self.target_pos[1]
+
         dx, dy = tx - cur[0], ty - cur[1]
         horiz_dist = math.hypot(dx, dy)
 
+        # Already on target — bleed off velocity and hold
         if horiz_dist < 1e-4:
-            # Already aligned horizontally — hold position
-            return [tx, ty, self.altitude]
+            self.last_avoiding    = False
+            self.last_steer_vec   = (0.0, 0.0)
+            self.vx *= 0.7
+            self.vy *= 0.7
+            self.vz *= 0.7
+            self.last_velocity    = (self.vx, self.vy)
+            self.last_speed       = math.hypot(self.vx, self.vy)
+            self.last_accel       = (0.0, 0.0)
+            self.last_accel_mag   = 0.0
+            self.last_turn_rate   = 0.0
+            return [cur[0] + self.vx, cur[1] + self.vy, self.altitude]
 
-        # Normalise and scale
-        scale = min(self.cruise_speed, horiz_dist)  # don’t overshoot
-        ux, uy = dx / horiz_dist, dy / horiz_dist
-        new_x = cur[0] + ux * scale
-        new_y = cur[1] + uy * scale
-        new_z = self.altitude  # altitude lock (simple rule-based, no PID)
+        # ── 2. Desired heading toward target ──────────────────────────────
+        desired_yaw = math.atan2(dy, dx)
+
+        # ── 3. Obstacle repulsion — deflect desired heading ───────────────
+        closest_name, min_dist, bx, by = self._check_collision_distance(cur)
+        self.last_avoiding = False
+
+        if closest_name and min_dist < self.safety_radius:
+            self.last_avoiding = True
+            rx = cur[0] - bx
+            ry = cur[1] - by
+            r_dist = math.hypot(rx, ry)
+            if r_dist > 1e-4:
+                # Blend repulsion into desired direction, then re-derive yaw
+                blend_x = (dx / horiz_dist) * self.target_strength + \
+                          (rx / r_dist) * self.avoidance_strength
+                blend_y = (dy / horiz_dist) * self.target_strength + \
+                          (ry / r_dist) * self.avoidance_strength
+                bl = math.hypot(blend_x, blend_y)
+                if bl > 1e-4:
+                    desired_yaw = math.atan2(blend_y / bl, blend_x / bl)
+
+        # ── 4. Smooth yaw toward desired_yaw (max_turn_rate per step) ─────
+        delta_yaw = desired_yaw - self.current_yaw
+        # Wrap delta to (-pi, pi)
+        while delta_yaw >  math.pi: delta_yaw -= 2.0 * math.pi
+        while delta_yaw < -math.pi: delta_yaw += 2.0 * math.pi
+        turn = max(-self.max_turn_rate, min(self.max_turn_rate, delta_yaw))
+        self.current_yaw += turn
+        self.last_turn_rate = turn
+        # Keep yaw in (-pi, pi]
+        while self.current_yaw >  math.pi: self.current_yaw -= 2.0 * math.pi
+        while self.current_yaw < -math.pi: self.current_yaw += 2.0 * math.pi
+
+        # ── 5. Desired speed with deceleration ramp near waypoint ─────────
+        if horiz_dist < self.decel_radius:
+            # Linear ramp: full cruise at decel_radius, approaching 0 at target.
+            # Floor prevents getting stuck at tiny but non-zero distance.
+            ramp_frac = max(0.05, horiz_dist / self.decel_radius)
+            desired_speed = self.cruise_velocity * ramp_frac
+        else:
+            desired_speed = self.cruise_velocity
+        desired_speed = min(desired_speed, self.max_velocity)
+
+        # ── 6. Desired velocity vector from heading + speed ───────────────
+        desired_vx = math.cos(self.current_yaw) * desired_speed
+        desired_vy = math.sin(self.current_yaw) * desired_speed
+
+        # ── 7. Accelerate toward desired velocity (bounded by max_accel) ──
+        prev_vx, prev_vy = self.vx, self.vy
+        ax = desired_vx - self.vx
+        ay = desired_vy - self.vy
+        a_mag = math.hypot(ax, ay)
+        if a_mag > self.max_acceleration:
+            scale_a = self.max_acceleration / a_mag
+            ax *= scale_a
+            ay *= scale_a
+        self.vx += ax
+        self.vy += ay
+
+        # Hard clamp to max_velocity
+        v_mag = math.hypot(self.vx, self.vy)
+        if v_mag > self.max_velocity:
+            fac = self.max_velocity / v_mag
+            self.vx *= fac
+            self.vy *= fac
+
+        # ── 8. Integrate XY position ──────────────────────────────────────
+        new_x = cur[0] + self.vx
+        new_y = cur[1] + self.vy
+
+        # ── 9. Kinematic Z hold (simple — no PID, no motor thrust) ────────
+        z_error = self.altitude - cur[2]
+        # Gently accelerate vz toward the altitude error (spring-like)
+        desired_vz  = max(-self.max_acceleration * 2,
+                          min(self.max_acceleration * 2, z_error * 0.3))
+        dz = desired_vz - self.vz
+        dz_clamped = max(-self.max_acceleration * 0.5,
+                         min(self.max_acceleration * 0.5, dz))
+        self.vz += dz_clamped
+        new_z = cur[2] + self.vz
+
+        # ── Store HUD telemetry ───────────────────────────────────────────
+        heading_unit = (math.cos(self.current_yaw), math.sin(self.current_yaw))
+        self.last_steer_vec = heading_unit
+        self.last_velocity  = (self.vx, self.vy)
+        self.last_speed     = math.hypot(self.vx, self.vy)
+        self.last_accel     = (ax, ay)
+        self.last_accel_mag = math.hypot(ax, ay)
 
         return [new_x, new_y, new_z]
 
     def _orient_toward(self, prev_pos, new_pos):
         """
-        Rotate UAV_0 in the direction of travel (yaw only, Z-up ENU).
-        Uses the same axis-angle [0,0,1,yaw] convention as the patrol code.
+        Apply the kinematic model's already-smoothed yaw to the UAV rotation field.
+
+        The kinematic engine in _move_toward_target() owns heading via
+        self.current_yaw (bounded per step by max_turn_rate), so we simply
+        write that value instead of deriving an instant angle from displacement.
+        This guarantees orientation and velocity are always consistent and that
+        no instant heading flips can occur regardless of prev/new positions.
         """
-        dx = new_pos[0] - prev_pos[0]
-        dy = new_pos[1] - prev_pos[1]
-        if math.hypot(dx, dy) > 1e-4:
-            yaw = math.atan2(dy, dx)
-            self.uav_rf.setSFRotation([0.0, 0.0, 1.0, yaw])
+        # Use the smooth kinematic yaw — prev/new_pos kept as parameters for
+        # API compatibility in case callers change in future.
+        self.uav_rf.setSFRotation([0.0, 0.0, 1.0, self.current_yaw])
 
     # ── Per-step update ───────────────────────────────────────────────────
 
@@ -240,6 +980,11 @@ class SingleDroneNavigation:
 
         # ── STATE: NAVIGATE ───────────────────────────────────────────
         if self.state == self.STATE_NAVIGATE:
+
+            # Lazy A* init — runs once on the very first NAVIGATE step
+            if self.astar_enabled and not self.astar_initialized:
+                self._init_astar()
+
             cur = list(self.uav_tf.getSFVec3f())
             dist_to_target = self._dist3(cur, self.target_pos)
 
@@ -248,6 +993,21 @@ class SingleDroneNavigation:
                 self.uav_tf.setSFVec3f(self.target_pos)
                 self.state = self.STATE_ARRIVED
                 return True
+
+            # ── A* waypoint advance ───────────────────────────────────
+            if self.astar_enabled and self.waypoints:
+                wp = self.waypoints[self.current_wp_idx]
+                dist_to_wp = self._dist2(cur, wp)
+                if dist_to_wp <= self.waypoint_radius:
+                    # Reached this waypoint — advance to next
+                    prev_idx = self.current_wp_idx
+                    if self.current_wp_idx < len(self.waypoints) - 1:
+                        self.current_wp_idx += 1
+                        new_wp = self.waypoints[self.current_wp_idx]
+                        print(f"  [A*] WP[{prev_idx:02d}] reached -> advancing to "
+                              f"WP[{self.current_wp_idx:02d}] "
+                              f"({new_wp[0]:.1f}, {new_wp[1]:.1f})  "
+                              f"step={self.step_count}")
 
             prev_pos = list(cur)
             new_pos  = self._move_toward_target()
@@ -262,8 +1022,28 @@ class SingleDroneNavigation:
             except Exception:
                 pass
 
+            # ── DEBUG OBSERVABILITY UPDATES ───────────────────────────────
+            if self.debug_mode:
+                # Task 1: move beacon above drone
+                self._update_debug_beacon(new_pos)
+                # Task 3: add trail dot
+                self._update_path_trail(new_pos)
+
+            # Task 2: smooth chase cam override (only when cam_mode == 2)
+            if self.parent.cam_mode == 2:
+                self.parent._update_chase_cam(
+                    new_pos, self.last_steer_vec, self._chase_lerp_alpha,
+                    self._chase_behind_dist, self._chase_above_dist,
+                    self._chase_lookahead
+                )
+
+            # Task 6: ASCII minimap every N steps
+            if self.debug_mode and self.step_count % self._minimap_interval == 0:
+                self._print_minimap(new_pos)
+            # ─────────────────────────────────────────────────────────────
+
             # Lightweight Collision Check
-            closest_name, min_dist = self._check_collision_distance(cur)
+            closest_name, min_dist, _, _ = self._check_collision_distance(cur)
             if min_dist < 4.0 and (self.step_count - self.last_warning_step) > 20:
                 print(f"  [WARNING] Potential collision likely with {closest_name}! (dist: {min_dist:.1f}m)")
                 self.last_warning_step = self.step_count
@@ -271,7 +1051,7 @@ class SingleDroneNavigation:
                 print(f"  [CRITICAL] Drone is INSIDE building {closest_name}!")
                 self.last_warning_step = self.step_count
 
-            # Periodic console debug log
+            # Task 5: Periodic formatted debug HUD
             if self.step_count % self.log_interval == 0:
                 cur_after = list(self.uav_tf.getSFVec3f())
                 self._log_status(cur_after, dist_to_target, closest_name, min_dist)
@@ -302,26 +1082,75 @@ class SingleDroneNavigation:
         return True  # fallback
 
     def _check_collision_distance(self, pos):
-        """Returns (closest_building_name, surface_distance)."""
+        """Returns (closest_building_name, surface_distance, b_x, b_y)."""
         min_dist = 999.0
         closest = None
+        bx, by = 0.0, 0.0
         for b in self.test_buildings:
             dist = math.hypot(pos[0] - b["x"], pos[1] - b["y"])
             surface_dist = dist - b["r"]
             if surface_dist < min_dist:
                 min_dist = surface_dist
                 closest = b["name"]
-        return closest, min_dist
+                bx, by = b["x"], b["y"]
+        return closest, min_dist, bx, by
 
     def _log_status(self, pos, dist_to_target, closest_bldg=None, bldg_dist=999.0):
-        """Console debug log shown every log_interval steps."""
-        print(f"\n[► Step {self.step_count:>6}]  State: {self.state}")
-        print(f"  UAV_0 position : ({pos[0]:7.2f}, {pos[1]:7.2f}, {pos[2]:5.2f}) m")
-        print(f"  Dist to target : {dist_to_target:7.2f} m")
-        print(f"  Altitude       : {pos[2]:5.2f} m  (target={self.altitude:.1f} m)")
-        if closest_bldg:
-            print(f"  [CollisionTest] Nearest obstacle ({closest_bldg}): {bldg_dist:.1f}m")
-        print(f"  Target         : ({self.target_pos[0]:.1f}, {self.target_pos[1]:.1f}, {self.target_pos[2]:.1f})")
+        """
+        Task 5: Formatted debug HUD printed every log_interval steps.
+        Provides a clear, fixed-width status panel for easy debugging.
+        Extended for kinematic model: adds speed, acceleration, yaw, turn rate.
+        """
+        avoiding_str  = "ACTIVE  " if getattr(self, 'last_avoiding', False) else "INACTIVE"
+        planner_str   = "A*" if self.astar_enabled else "Reactive-only"
+        vel           = getattr(self, 'last_velocity',  (0.0, 0.0))
+        spd           = getattr(self, 'last_speed',     0.0)
+        acc           = getattr(self, 'last_accel',     (0.0, 0.0))
+        acc_mag       = getattr(self, 'last_accel_mag', 0.0)
+        turn          = getattr(self, 'last_turn_rate', 0.0)
+        yaw_deg       = math.degrees(self.current_yaw)
+
+        # Waypoint info
+        if self.astar_enabled and self.waypoints:
+            wp         = self.waypoints[self.current_wp_idx]
+            wp_idx_str = f"{self.current_wp_idx + 1} / {len(self.waypoints)}"
+            wp_pos_str = f"({wp[0]:.1f}, {wp[1]:.1f})"
+            dist_to_wp = self._dist2(pos, wp)
+        else:
+            wp_idx_str = "N/A"
+            wp_pos_str = "N/A"
+            dist_to_wp = dist_to_target
+
+        # Nearest obstacle
+        if closest_bldg and bldg_dist < 999.0:
+            obstacle_str = f"{closest_bldg:<14} ({bldg_dist:.1f} m)"
+        else:
+            obstacle_str = "none detected"
+
+        line = "\u2550" * 50
+        print(f"\n\u2554{line}\u2557")
+        print(f"\u2551  DRONE DEBUG STATUS          Step: {self.step_count:>6}        \u2551")
+        print(f"\u2560{line}\u2563")
+        print(f"\u2551  Motion Model     : KINEMATIC (vel+accel)           \u2551")
+        print(f"\u2551  Planner          : {planner_str:<28} \u2551")
+        print(f"\u2551  Mission State    : {self.state:<28} \u2551")
+        print(f"\u2551  Avoidance        : {avoiding_str:<28} \u2551")
+        print(f"\u2551  Waypoint         : {wp_idx_str:<8}  -> {wp_pos_str:<16} \u2551")
+        print(f"\u2560{line}\u2563")
+        print(f"\u2551  Current Pos      : ({pos[0]:7.2f}, {pos[1]:7.2f}, {pos[2]:5.2f})      \u2551")
+        print(f"\u2551  Velocity (vx,vy) : ({vel[0]:+7.4f}, {vel[1]:+7.4f})           \u2551")
+        print(f"\u2551  Speed            : {spd:7.4f} m/step  (max: {self.max_velocity:.3f})  \u2551")
+        print(f"\u2551  Accel (ax,ay)    : ({acc[0]:+7.4f}, {acc[1]:+7.4f})           \u2551")
+        print(f"\u2551  Accel magnitude  : {acc_mag:7.4f} m/step\u00b2 (max: {self.max_acceleration:.3f})\u2551")
+        print(f"\u2551  Yaw              : {yaw_deg:+8.2f} deg                       \u2551")
+        print(f"\u2551  Turn rate        : {math.degrees(turn):+7.3f} deg/step (max: {math.degrees(self.max_turn_rate):.1f})\u2551")
+        print(f"\u2560{line}\u2563")
+        print(f"\u2551  Altitude         : {pos[2]:6.2f} m   (target={self.altitude:.1f} m)       \u2551")
+        print(f"\u2551  Dist to Target   : {dist_to_target:7.2f} m                         \u2551")
+        print(f"\u2551  Dist to WP       : {dist_to_wp:7.2f} m                         \u2551")
+        print(f"\u2551  Nearest Obs.     : {obstacle_str:<28} \u2551")
+        print(f"\u255a{line}\u255d")
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────────
@@ -340,11 +1169,12 @@ _CAM_MODES = {
         "followType":  "Pan and Tilt Shot",
     },
     2: {
-        "label":       "Tracking shot (chase UAV_0)",
-        "position":    [80.0, -100.0, 75.0],   # irrelevant for Tracking Shot
+        "label":       "Smooth chase-cam (custom interpolated follow)",
+        "position":    [80.0, -100.0, 75.0],   # initial seed — overridden each step
         "orientation": [-0.16, 0.22, 0.96, 1.32],
+        # followType set to None so our manual _update_chase_cam() takes full control
         "follow":      "UAV_0",
-        "followType":  "Tracking Shot",
+        "followType":  "None",
     },
     3: {
         "label":       "Top-down overview",
@@ -415,6 +1245,9 @@ class MultiUAVSurveillance:
         self.viewpoint = self.supervisor.getFromDef("MAIN_VIEW")
         self.cam_mode = 1
         self._cam_health_counter = 0  # increments each step; triggers recovery check every 500 steps
+        # Task 2: smooth chase-cam lerp state (reset by _set_camera_mode on mode 2 activation)
+        self._chase_smooth_pos    = None   # [x, y, z] lerped viewpoint position
+        self._chase_smooth_target = None   # [x, y, z] lerped look-at point
         try:
             self.keyboard = self.supervisor.getKeyboard()
             self.keyboard.enable(self.timestep)
@@ -492,6 +1325,12 @@ class MultiUAVSurveillance:
             self.viewpoint.getField("followType").setSFString(cfg["followType"])
             self.cam_mode = mode
             print(f"[Camera] Mode {mode} activated — {cfg['label']}")
+            # Reset smooth cam state so mode 2 lerp starts fresh
+            if mode == 2:
+                self._chase_smooth_pos    = None
+                self._chase_smooth_target = None
+                print("[Camera] Chase-cam smoothing reset — "
+                      "will begin interpolating from current drone position.")
         except Exception as e:
             print(f"[Camera] Could not switch mode: {e}")
 
@@ -508,6 +1347,114 @@ class MultiUAVSurveillance:
             _CAM_MODES[2]["follow"] = uav_name
         except Exception as e:
             print(f"[Camera] Could not shift focus to {uav_name}: {e}")
+
+    # ── Task 2: Smooth Chase Camera ────────────────────────────────────────────
+
+    def _update_chase_cam(self, drone_pos, drone_heading_vec,
+                          lerp_alpha=0.07, behind_dist=14.0,
+                          above_dist=7.0, lookahead=4.0):
+        """
+        Manually position the Viewpoint each step for a smooth third-person chase cam.
+
+        Algorithm:
+          1. Compute desired camera position = drone_pos
+                                               - behind_dist * heading_unit
+                                               + above_dist  * Z
+          2. Compute look-at target           = drone_pos + lookahead * heading_unit
+          3. Lerp current smooth position toward desired (alpha controls speed)
+          4. Derive axis-angle orientation from cam→look-at vector
+          5. Write position + orientation to Viewpoint node fields
+
+        This completely overrides Webots' built-in followType interpolation,
+        giving tighter, more configurable control without jitter.
+        """
+        if self.viewpoint is None:
+            return
+
+        # Normalise heading vector (may be (0,0) on first step)
+        hx, hy = drone_heading_vec
+        h_len = math.hypot(hx, hy)
+        if h_len < 1e-4:
+            hx, hy = 1.0, 0.0   # default: face East
+        else:
+            hx, hy = hx / h_len, hy / h_len
+
+        # Desired camera position: behind and above the drone
+        desired_cx = drone_pos[0] - hx * behind_dist
+        desired_cy = drone_pos[1] - hy * behind_dist
+        desired_cz = drone_pos[2] + above_dist
+
+        # Look-at point: slightly ahead of the drone
+        look_x = drone_pos[0] + hx * lookahead
+        look_y = drone_pos[1] + hy * lookahead
+        look_z = drone_pos[2]
+
+        # Initialise smooth state on first call
+        if not hasattr(self, '_chase_smooth_pos') or self._chase_smooth_pos is None:
+            self._chase_smooth_pos    = [desired_cx, desired_cy, desired_cz]
+            self._chase_smooth_target = [look_x, look_y, look_z]
+
+        # Lerp toward desired values
+        sp = self._chase_smooth_pos
+        st = self._chase_smooth_target
+        sp[0] += lerp_alpha * (desired_cx - sp[0])
+        sp[1] += lerp_alpha * (desired_cy - sp[1])
+        sp[2] += lerp_alpha * (desired_cz - sp[2])
+        st[0] += lerp_alpha * (look_x - st[0])
+        st[1] += lerp_alpha * (look_y - st[1])
+        st[2] += lerp_alpha * (look_z - st[2])
+
+        # Derive orientation: axis-angle from camera → look-at direction
+        # In Webots ENU, default camera looks along -Z.
+        # We want camera to look from sp toward st.
+        dx = st[0] - sp[0]
+        dy = st[1] - sp[1]
+        dz = st[2] - sp[2]
+        dist_look = math.sqrt(dx*dx + dy*dy + dz*dz)
+        if dist_look < 1e-3:
+            return   # degenerate — skip this frame
+
+        # Yaw: angle around Z axis
+        yaw = math.atan2(dy, dx)
+        # Pitch: angle downward from horizontal
+        pitch = math.atan2(-dz, math.hypot(dx, dy))
+
+        # Compose as Webots axis-angle via intermediate euler:
+        # orientation = rotate by pitch around Y', then yaw around Z
+        # Approximate: use yaw-only axis-angle [0,0,1, yaw+pi] then tilt
+        # Simpler robust approach: use axis-angle [ax, ay, az, angle] directly
+        # We'll encode as: first yaw, then apply forward-down tilt
+        # For a third-person view we tilt down by ~30° + pitch
+        tilt_angle = math.radians(25) + pitch   # extra tilt toward drone
+
+        # Rotation axis for combined yaw+tilt:
+        # tilt axis is perpendicular to heading in horizontal plane: (-hy, hx, 0)
+        # rotate that tilt axis by yaw around Z to stay consistent
+        tilt_ax = -hy
+        tilt_ay =  hx
+        tilt_az =  0.0
+        tilt_len = math.hypot(tilt_ax, tilt_ay)
+        if tilt_len < 1e-4:
+            tilt_ax, tilt_ay = 0.0, 1.0
+        else:
+            tilt_ax /= tilt_len
+            tilt_ay /= tilt_len
+
+        # Final orientation: yaw rotation + downward tilt
+        # We use a simple two-step baked axis-angle:
+        #   primary: yaw around Z = [0,0,1, yaw + pi/2]
+        #   secondary: tilt down  = blend with tilt axis
+        # Practical shortcut: Webots chase cam works well with
+        #   axis = tilt axis (perpendicular to heading), angle = tilt_angle
+        #   plus explicit position override.
+        # The camera position dominates perception; orientation is secondary.
+        final_ori = [tilt_ax, tilt_ay, tilt_az, tilt_angle + math.pi * 0.05]
+
+        try:
+            self.viewpoint.getField("position").setSFVec3f(list(sp))
+            self.viewpoint.getField("orientation").setSFRotation(final_ori)
+        except Exception:
+            pass
 
     def _validate_and_recover_camera(self):
         """
