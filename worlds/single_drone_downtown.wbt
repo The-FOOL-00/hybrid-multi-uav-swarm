@@ -1,0 +1,698 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Asphalt.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/road/protos/Road.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/road/protos/RoadIntersection.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/SimpleBuilding.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/CommercialBuilding.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/ResidentialBuilding.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/LargeResidentialTower.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/RandomBuilding.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/Hotel.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/trees/protos/Pine.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/trees/protos/SimpleTree.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/traffic/protos/StreetLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/traffic/protos/CrossRoadsTrafficLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/street_furniture/protos/Bench.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/street_furniture/protos/BusStop.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/vehicles/protos/tesla/TeslaModel3Simple.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/humans/pedestrian/protos/Pedestrian.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+EXTERNPROTO "../protos/Bird.proto"
+
+WorldInfo {
+  info [
+    "Single-Drone Navigation Development Environment"
+    "Based on Downtown Dense Urban scenario"
+    "STIRS-2025 Project - SSN College of Engineering"
+    "UAV_1-4 removed — single drone baseline + collision avoidance dev"
+    "Mission: (-40, 48, 15) -> (50, 48, 15)"
+  ]
+  title "Single-Drone Navigation — Downtown Dev World"
+  gravity -9.806
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+# ── Viewpoint: Chase-cam locked on UAV_0 spawn region ──────────────────────────
+# Position is set behind and above the start point (-40, 48, 15) looking east.
+# followType "Tracking Shot" makes Webots automatically track UAV_0 as it moves.
+# followSmoothness 0.15 gives a tighter, more responsive camera than the default.
+DEF MAIN_VIEW Viewpoint {
+  orientation -0.35 0.87 0.35 1.28
+  position -70 20 35
+  near 0.5
+  follow "UAV_0"
+  followType "Tracking Shot"
+  followSmoothness 0.15
+}
+TexturedBackground {
+  texture "noon_cloudy_countryside"
+  luminosity 1.2
+}
+TexturedBackgroundLight {
+  castShadows FALSE
+}
+Floor {
+  size 200 200
+  tileSize 4 4
+  appearance Asphalt {
+  }
+}
+# ── Roads (3x3 grid, identical to downtown) ────────────────────────────────────
+Road {
+  translation -90 -40 0.02
+  name "road_ew_s"
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
+}
+Road {
+  translation -90 0 0.02
+  name "road_ew_c"
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
+}
+Road {
+  translation -90 40 0.02
+  name "road_ew_n"
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
+}
+Road {
+  translation -40 -90 0.02
+  rotation 0 0 1 1.5708
+  name "road_ns_w"
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
+}
+Road {
+  translation 0 -90 0.02
+  rotation 0 0 1 1.5708
+  name "road_ns_c"
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
+}
+Road {
+  translation 40 -90 0.02
+  rotation 0 0 1 1.5708
+  name "road_ns_e"
+  wayPoints [
+    0 0 0
+    180 0 0
+  ]
+}
+RoadIntersection {
+  translation -40 -40 0.02
+  name "isect_sw"
+  startRoads FALSE
+}
+RoadIntersection {
+  translation 0 -40 0.02
+  name "isect_sc"
+  startRoads FALSE
+}
+RoadIntersection {
+  translation 40 -40 0.02
+  name "isect_se"
+  startRoads FALSE
+}
+RoadIntersection {
+  translation -40 0 0.02
+  name "isect_mw"
+  startRoads FALSE
+}
+RoadIntersection {
+  translation 0 0 0.02
+  name "isect_mc"
+  startRoads FALSE
+}
+RoadIntersection {
+  translation 40 0 0.02
+  name "isect_me"
+  startRoads FALSE
+}
+RoadIntersection {
+  translation -40 40 0.02
+  name "isect_nw"
+  startRoads FALSE
+}
+RoadIntersection {
+  translation 0 40 0.02
+  name "isect_nc"
+  startRoads FALSE
+}
+RoadIntersection {
+  translation 40 40 0.02
+  name "isect_ne"
+  startRoads FALSE
+}
+# ── Traffic lights ─────────────────────────────────────────────────────────────
+CrossRoadsTrafficLight {
+  name "tl_center"
+}
+CrossRoadsTrafficLight {
+  translation -40 -40 0
+  name "tl_sw"
+}
+CrossRoadsTrafficLight {
+  translation 40 40 0
+  name "tl_ne"
+}
+# ── Buildings — all kept for realistic obstacle environment ────────────────────
+SimpleBuilding {
+  translation 24 58 0
+  name "tower_a"
+  floorHeight 3.2
+  floorNumber 15
+  corners [
+    8 12
+    8 -12
+    -8 -12
+    -8 12
+  ]
+  wallType "glass highrise"
+}
+SimpleBuilding {
+  translation 36 48 0
+  name "tower_b"
+  floorHeight 3.2
+  floorNumber 12
+  corners [
+    7 10
+    7 -10
+    -7 -10
+    -7 10
+  ]
+  wallType "transparent highrise"
+}
+SimpleBuilding {
+  translation 24 46 0
+  name "tower_c"
+  floorHeight 3.5
+  floorNumber 10
+  corners [
+    6 8
+    6 -8
+    -6 -8
+    -6 8
+  ]
+  wallType "blue glass building"
+}
+SimpleBuilding {
+  translation -26 60 0
+  name "office_nw1"
+  floorNumber 8
+  corners [
+    10 12
+    10 -12
+    -10 -12
+    -10 12
+  ]
+}
+SimpleBuilding {
+  translation -36 48 0
+  name "office_nw2"
+  floorNumber 6
+  corners [
+    8 8
+    8 -8
+    -8 -8
+    -8 8
+  ]
+  wallType "old office building"
+}
+CommercialBuilding {
+  translation 26 -58 0
+  name "commercial_se"
+}
+SimpleBuilding {
+  translation 36 -48 0
+  name "office_se"
+  floorNumber 7
+  corners [
+    8 10
+    8 -10
+    -8 -10
+    -8 10
+  ]
+  wallType "concrete building"
+}
+ResidentialBuilding {
+  translation -26 -58 0
+  name "residential_sw"
+}
+SimpleBuilding {
+  translation -36 -48 0
+  name "office_sw"
+  floorNumber 5
+  corners [
+    9 9
+    9 -9
+    -9 -9
+    -9 9
+  ]
+  wallType "brick building"
+}
+Hotel {
+  translation 60 0 0
+  name "hotel_east"
+}
+SimpleBuilding {
+  translation -60 10 0
+  name "building_w1"
+  floorNumber 4
+  corners [
+    12 8
+    12 -8
+    -12 -8
+    -12 8
+  ]
+  wallType "residential building"
+}
+SimpleBuilding {
+  translation -62 -10 0
+  name "building_w2"
+  corners [
+    10 6
+    10 -6
+    -10 -6
+    -10 6
+  ]
+  wallType "old building"
+}
+RandomBuilding {
+  translation 0 72 0
+  name "random_n1"
+}
+LargeResidentialTower {
+  translation -20 72 0
+  name "tower_res_n"
+}
+SimpleBuilding {
+  translation 22 72 0
+  name "building_n2"
+  floorNumber 9
+  corners [
+    8 10
+    8 -10
+    -8 -10
+    -8 10
+  ]
+  wallType "highrise"
+}
+# ── Street lights ──────────────────────────────────────────────────────────────
+StreetLight {
+  translation -75 4 0
+  name "sl_ew0_1"
+}
+StreetLight {
+  translation -60 4 0
+  name "sl_ew0_2"
+}
+StreetLight {
+  translation -45 4 0
+  name "sl_ew0_3"
+}
+StreetLight {
+  translation -15 4 0
+  name "sl_ew0_4"
+}
+StreetLight {
+  translation 15 4 0
+  name "sl_ew0_5"
+}
+StreetLight {
+  translation 45 4 0
+  name "sl_ew0_6"
+}
+StreetLight {
+  translation 60 4 0
+  name "sl_ew0_7"
+}
+StreetLight {
+  translation 75 4 0
+  name "sl_ew0_8"
+}
+StreetLight {
+  translation 4 -75 0
+  rotation 0 0 1 1.5708
+  name "sl_ns0_1"
+}
+StreetLight {
+  translation 4 -60 0
+  rotation 0 0 1 1.5708
+  name "sl_ns0_2"
+}
+StreetLight {
+  translation 4 -45 0
+  rotation 0 0 1 1.5708
+  name "sl_ns0_3"
+}
+StreetLight {
+  translation 4 -15 0
+  rotation 0 0 1 1.5708
+  name "sl_ns0_4"
+}
+StreetLight {
+  translation 4 15 0
+  rotation 0 0 1 1.5708
+  name "sl_ns0_5"
+}
+StreetLight {
+  translation 4 45 0
+  rotation 0 0 1 1.5708
+  name "sl_ns0_6"
+}
+StreetLight {
+  translation 4 60 0
+  rotation 0 0 1 1.5708
+  name "sl_ns0_7"
+}
+# ── Street furniture ───────────────────────────────────────────────────────────
+Bench {
+  translation -20 5 0
+  name "bench_1"
+}
+Bench {
+  translation 20 5 0
+  name "bench_2"
+}
+BusStop {
+  translation -44 -20 0
+  rotation 0 0 1 1.5708
+  name "bus_stop_1"
+}
+BusStop {
+  translation 44 20 0
+  rotation 0 0 1 -1.5708
+  name "bus_stop_2"
+}
+# ── Trees ──────────────────────────────────────────────────────────────────────
+Pine {
+  translation -45 -75 0
+  name "pine_1"
+}
+Pine {
+  translation -45 -60 0
+  name "pine_2"
+}
+Pine {
+  translation -45 -45 0
+  name "pine_3"
+}
+Pine {
+  translation -45 -15 0
+  name "pine_4"
+}
+Pine {
+  translation -45 15 0
+  name "pine_5"
+}
+Pine {
+  translation -45 45 0
+  name "pine_6"
+}
+Pine {
+  translation -45 60 0
+  name "pine_7"
+}
+Pine {
+  translation -45 75 0
+  name "pine_8"
+}
+SimpleTree {
+  translation 45 -60 0
+  name "tree_e1"
+}
+SimpleTree {
+  translation 45 -30 0
+  name "tree_e2"
+}
+SimpleTree {
+  translation 45 30 0
+  name "tree_e3"
+}
+SimpleTree {
+  translation 45 60 0
+  name "tree_e4"
+}
+# ── Parked vehicles ────────────────────────────────────────────────────────────
+TeslaModel3Simple {
+  translation -70 -15 0.31
+  rotation 0 0 1 1.5708
+  name "tesla_1"
+}
+TeslaModel3Simple {
+  translation -70 -5 0.31
+  rotation 0 0 1 1.5708
+  name "tesla_2"
+}
+TeslaModel3Simple {
+  translation -70 5 0.31
+  rotation 0 0 1 1.5708
+  name "tesla_3"
+}
+TeslaModel3Simple {
+  translation -70 15 0.31
+  rotation 0 0 1 1.5708
+  name "tesla_4"
+}
+TeslaModel3Simple {
+  translation 70 -15 0.31
+  rotation 0 0 1 -1.5708
+  name "tesla_5"
+}
+TeslaModel3Simple {
+  translation 70 -5 0.31
+  rotation 0 0 1 -1.5708
+  name "tesla_6"
+}
+TeslaModel3Simple {
+  translation 70 5 0.31
+  rotation 0 0 1 -1.5708
+  name "tesla_7"
+}
+TeslaModel3Simple {
+  translation 70 15 0.31
+  rotation 0 0 1 -1.5708
+  name "tesla_8"
+}
+# ── Pedestrians — all 15 kept for city life ────────────────────────────────────
+Pedestrian {
+  translation -44 3.7759999999999962 1.2434545454545451
+  rotation 0 0 1 1.5707963267948966
+  name "ped_0"
+  controllerArgs [
+    "--trajectory=-44 -70, -44 70"
+    "--speed=1.2"
+  ]
+  shirtColor 0.8 0.2 0.2
+}
+Pedestrian {
+  translation -36 21.072000000000006 1.2423636363636366
+  rotation 0 0 1 1.5707963267948966
+  name "ped_1"
+  controllerArgs [
+    "--trajectory=-36 -65, -36 65"
+    "--speed=1.4"
+  ]
+  shirtColor 0.2 0.7 0.3
+}
+Pedestrian {
+  translation 4 -2.3719999999999857 1.2440000000000009
+  rotation 0 0 1 1.5707963267948966
+  name "ped_2"
+  controllerArgs [
+    "--trajectory=4 -70, 4 70"
+    "--speed=1.1"
+  ]
+  shirtColor 0.3 0.3 0.8
+}
+Pedestrian {
+  translation -4 14.924000000000003 1.2429090909090912
+  rotation 0 0 1 1.5707963267948966
+  name "ped_3"
+  controllerArgs [
+    "--trajectory=-4 -65, -4 65"
+    "--speed=1.3"
+  ]
+  shirtColor 0.9 0.6 0.1
+}
+Pedestrian {
+  translation 36 -8.519999999999996 1.244545454545455
+  rotation 0 0 1 1.5707963267948966
+  name "ped_4"
+  controllerArgs [
+    "--trajectory=36 -70, 36 70"
+    "--speed=1.0"
+  ]
+  shirtColor 0.6 0.2 0.8
+}
+Pedestrian {
+  translation 44 27.22 1.241818181818182
+  rotation 0 0 1 1.5707963267948966
+  name "ped_5"
+  controllerArgs [
+    "--trajectory=44 -65, 44 65"
+    "--speed=1.5"
+  ]
+  shirtColor 0.2 0.6 0.8
+}
+Pedestrian {
+  translation 3.7759999999999962 -36 1.2434545454545451
+  name "ped_6"
+  controllerArgs [
+    "--trajectory=-70 -36, 70 -36"
+    "--speed=1.2"
+  ]
+  shirtColor 0.8 0.5 0.2
+}
+Pedestrian {
+  translation 2.6280000000000143 -44 1.2440000000000009
+  name "ped_7"
+  controllerArgs [
+    "--trajectory=-65 -44, 65 -44"
+    "--speed=1.1"
+  ]
+  shirtColor 0.3 0.8 0.5
+}
+Pedestrian {
+  translation 9.924000000000007 4 1.2429090909090912
+  name "ped_8"
+  controllerArgs [
+    "--trajectory=-70 4, 70 4"
+    "--speed=1.3"
+  ]
+  shirtColor 0.7 0.1 0.3
+}
+Pedestrian {
+  translation 21.072000000000006 -4 1.2423636363636366
+  name "ped_9"
+  controllerArgs [
+    "--trajectory=-65 -4, 65 -4"
+    "--speed=1.4"
+  ]
+  shirtColor 0.4 0.4 0.4
+}
+Pedestrian {
+  translation 3.7759999999999962 36 1.2434545454545451
+  name "ped_10"
+  controllerArgs [
+    "--trajectory=-70 36, 70 36"
+    "--speed=1.2"
+  ]
+  shirtColor 0.9 0.9 0.2
+}
+Pedestrian {
+  translation -3.519999999999996 44 1.244545454545455
+  name "ped_11"
+  controllerArgs [
+    "--trajectory=-65 44, 65 44"
+    "--speed=1.0"
+  ]
+  shirtColor 0.5 0.8 0.9
+}
+Pedestrian {
+  translation 3.5045173824901994 11.38968149309314 1.2429090909090912
+  rotation 0 0 1 1.2722973952087173
+  name "ped_12"
+  controllerArgs [
+    "--trajectory=-20 -65, 20 65, -20 65, 20 -65"
+    "--speed=1.3"
+  ]
+  shirtColor 0.8 0.3 0.6
+}
+Pedestrian {
+  translation 0.11156221481598294 -0.36257719815193923 1.2440000000000009
+  rotation 0 0 1 1.8692952583810758
+  name "ped_13"
+  controllerArgs [
+    "--trajectory=20 -65, -20 65"
+    "--speed=1.1"
+  ]
+  shirtColor 0.2 0.9 0.7
+}
+Pedestrian {
+  translation 0 11.072000000000006 1.2423636363636366
+  rotation 0 0 1 1.5707963267948966
+  name "ped_14"
+  controllerArgs [
+    "--trajectory=0 -75, 0 75"
+    "--speed=1.4"
+  ]
+  shirtColor 0.6 0.6 0.1
+}
+# ── UAV_0 ONLY — placed at mission start (-40, 48, 15) ─────────────────────────
+# UAV_1, UAV_2, UAV_3, UAV_4 intentionally removed for single-drone dev mode.
+DEF UAV_0 Mavic2Pro {
+  translation -40 48 15
+  rotation 0 0 1 0
+  name "UAV_0"
+  controller "uav_camera"
+  customData "uav_id=0"
+}
+# ── Bird flock — all 8 kept for ambient city life ──────────────────────────────
+DEF BIRD_0 Bird {
+  translation -0.8647009403885756 5.507068919133532 6.353792605409679
+  rotation 0.4389387592744597 0.755381424465788 0.4865507878717646 2.4820163809222326
+  name "bird_0"
+}
+DEF BIRD_1 Bird {
+  translation 9.950766620282677 0.02502422789756853 8.445069126462265
+  name "bird_1"
+  color 0.35 0.28 0.18
+}
+DEF BIRD_2 Bird {
+  translation -12.380021339159178 -5.616662314188719 4.113490622572893
+  name "bird_2"
+  color 0.2 0.2 0.15
+}
+DEF BIRD_3 Bird {
+  translation -14.411580593505397 -22.828478772278057 11.151925917650411
+  rotation 0.048481975195799235 0.8675819652073463 0.49492527893417687 1.8609912803468274
+  name "bird_3"
+  color 0.4 0.35 0.25
+}
+DEF BIRD_4 Bird {
+  translation 17.098640458921277 18.424646279034725 10.285106305258294
+  name "bird_4"
+}
+DEF BIRD_5 Bird {
+  translation 15.996627883954124 34.29103317169072 4.093010808542973
+  rotation -0.9930466258588689 -0.11728100499158604 0.010176676199972954 1.6977501582986205
+  name "bird_5"
+  color 0.3 0.22 0.14
+}
+DEF BIRD_6 Bird {
+  translation -32.73817797413093 -19.61447419834341 9.61664026834982
+  rotation -0.925735921865704 0.07004958928737132 0.371626234284026 -2.489731682710814
+  name "bird_6"
+  color 0.45 0.38 0.28
+}
+DEF BIRD_7 Bird {
+  translation 18.754196747844535 -15.712043289405276 8.981490673908691
+  rotation 0.9747726552343712 0.13507662634244696 -0.17768673451689332 2.413734349344068
+  name "bird_7"
+  color 0.25 0.18 0.12
+}
+# ── Supervisor — same controller, single_drone mode reads from YAML ─────────────
+Robot {
+  name "swarm_supervisor"
+  controller "uav_swarm_controller"
+  supervisor TRUE
+}
