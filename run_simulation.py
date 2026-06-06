@@ -2,12 +2,22 @@
 Launch script for Multi-UAV Surveillance Simulation
 ====================================================
 Usage:
-    python run_simulation.py                          # GUI, downtown
-    python run_simulation.py --scenario event         # GUI, event
-    python run_simulation.py --headless               # Headless, downtown
+    python run_simulation.py                               # GUI, downtown (5 UAVs)
+    python run_simulation.py --scenario single_drone       # GUI, single-drone dev world
+    python run_simulation.py --scenario event              # GUI, event
+    python run_simulation.py --headless                    # Headless, downtown
+    python run_simulation.py --scenario single_drone --headless
     python run_simulation.py --scenario mixed --headless
-    python run_simulation.py --list                   # Show all scenarios
-    python run_simulation.py --help                   # Full usage
+    python run_simulation.py --list                        # Show all scenarios
+    python run_simulation.py --help                        # Full usage
+
+Scenarios:
+    downtown      — Full 5-UAV swarm, 15 buildings, 15 pedestrians  [production]
+    single_drone  — DEV: 1 UAV only, same downtown, chase-cam       [development]
+    event         — Dense crowd event plaza
+    residential   — Low-density neighborhood
+    mixed         — Mixed commercial + residential zones
+    industrial    — Port/warehouse environment
 """
 import subprocess
 import argparse
@@ -23,27 +33,30 @@ _WEBOTS_CANDIDATES = [
 
 # ── Scenario registry ──────────────────────────────────────────────────────────
 SCENARIOS = {
-    "downtown":    "worlds/downtown.wbt",
-    "event":       "worlds/event.wbt",
-    "residential": "worlds/residential.wbt",
-    "mixed":       "worlds/mixed.wbt",
-    "industrial":  "worlds/industrial.wbt",
+    "downtown":      "worlds/downtown.wbt",
+    "single_drone":  "worlds/single_drone_downtown.wbt",
+    "event":         "worlds/event.wbt",
+    "residential":   "worlds/residential.wbt",
+    "mixed":         "worlds/mixed.wbt",
+    "industrial":    "worlds/industrial.wbt",
 }
 
 INFO = {
-    "downtown":    {"buildings": 15, "crowd": 15,  "uavs": 5, "birds": 8},
-    "event":       {"buildings": 5,  "crowd": 40,  "uavs": 5, "birds": 8},
-    "residential": {"buildings": 8,  "crowd": 8,   "uavs": 5, "birds": 6},
-    "mixed":       {"buildings": 14, "crowd": 35,  "uavs": 5, "birds": 8},
-    "industrial":  {"buildings": 2,  "crowd": 10,  "uavs": 5, "birds": 5},
+    "downtown":     {"buildings": 15, "crowd": 15,  "uavs": 5, "birds": 8},
+    "single_drone": {"buildings": 15, "crowd": 15,  "uavs": 1, "birds": 8},
+    "event":        {"buildings": 5,  "crowd": 40,  "uavs": 5, "birds": 8},
+    "residential":  {"buildings": 8,  "crowd": 8,   "uavs": 5, "birds": 6},
+    "mixed":        {"buildings": 14, "crowd": 35,  "uavs": 5, "birds": 8},
+    "industrial":   {"buildings": 2,  "crowd": 10,  "uavs": 5, "birds": 5},
 }
 
 SCENARIO_DESCRIPTIONS = {
-    "downtown":    "Dense urban 3x3 road grid, 15 high-rise buildings",
-    "event":       "Public event - central plaza, 40 crowd agents",
-    "residential": "Low-density neighborhood with parks, 8 houses",
-    "mixed":       "Mixed commercial + residential zones, 35 agents",
-    "industrial":  "Port/warehouse with containers and cranes, 10 workers",
+    "downtown":     "Dense urban 3x3 road grid, 15 high-rise buildings",
+    "single_drone": "[DEV] Single-drone nav+avoidance dev world — UAV_0 only, chase-cam, (-40,48,15)→(50,48,15)",
+    "event":        "Public event - central plaza, 40 crowd agents",
+    "residential":  "Low-density neighborhood with parks, 8 houses",
+    "mixed":        "Mixed commercial + residential zones, 35 agents",
+    "industrial":   "Port/warehouse with containers and cranes, 10 workers",
 }
 
 
