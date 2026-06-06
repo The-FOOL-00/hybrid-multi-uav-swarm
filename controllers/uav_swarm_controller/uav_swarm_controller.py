@@ -368,6 +368,25 @@ class SingleDroneNavigation:
         self.last_accel_mag   = 0.0
         self.last_turn_rate   = 0.0          # rad/step applied this step
 
+        # ── Stabilisation state ─────────────────────────────────────────────
+        # Task 3: avoidance gating
+        self.emergency_radius       = float(cfg.get("emergency_radius",          4.0))
+        # Task 4: yaw low-pass filter
+        self.yaw_smoothing_alpha    = float(cfg.get("yaw_smoothing_alpha",       0.2))
+        self._filtered_desired_yaw  = None   # initialised on first step
+        # Task 5: near-WP velocity damping
+        self.wp_damping_radius      = float(cfg.get("wp_damping_radius",         3.0))
+        self.velocity_damping_factor= float(cfg.get("velocity_damping_factor",   0.92))
+        # Task 1: WP transition hysteresis lock
+        self.waypoint_reach_lock_steps = int(cfg.get("waypoint_reach_lock_steps", 8))
+        self._wp_lock_counter       = 0      # counts down after a WP advance
+        # HUD extras for stabilisation
+        self.last_desired_yaw       = 0.0    # raw desired yaw before filtering
+        self.last_filtered_yaw      = 0.0    # filtered desired yaw
+        self.last_heading_error_deg = 0.0    # degrees between current_yaw and target
+        self.last_avoidance_mode    = "DISABLED"  # DISABLED / EMERGENCY / FULL
+        self.last_motion_state      = "CRUISE"    # CRUISE / DECEL / DAMP / LOCKED
+
         # UAV_0 node references (index 0 in parent lists)
         if len(parent.uav_trans) == 0:
             raise RuntimeError("[SingleDroneNav] UAV_0 not found in scene!")
@@ -530,6 +549,9 @@ class SingleDroneNavigation:
         """
         Run A* once (on first NAVIGATE step) to generate the waypoint list.
         Called lazily so the Webots scene is fully loaded before we query it.
+        Includes startup angle sanity check (Task 2): if WP[0] is "behind" the
+        drone relative to the overall mission direction, it is skipped to prevent
+        the startup jitter caused by an immediate 180-degree heading reversal.
         """
         print("\n[A*] Initialising path planner...")
         planner = AStarPlanner(
@@ -550,6 +572,33 @@ class SingleDroneNavigation:
         # Convert (x, y) → [x, y, z] with mission altitude
         self.waypoints = [[wx, wy, self.altitude] for wx, wy in raw_wps]
         self.current_wp_idx = 0
+
+        # ── Task 2: Startup angle sanity check ───────────────────────────────
+        # Compare angle (start→WP0) vs (start→goal).
+        # If WP0 is more than 90° off the overall mission direction, skip it.
+        # This prevents the drone doing a startup U-turn that causes jitter.
+        if len(self.waypoints) > 1:
+            sx, sy = self.start_pos[0], self.start_pos[1]
+            gx, gy = self.target_pos[0], self.target_pos[1]
+            w0x, w0y = self.waypoints[0][0], self.waypoints[0][1]
+
+            # Direction vectors
+            to_goal_x, to_goal_y = gx - sx, gy - sy
+            to_wp0_x,  to_wp0_y  = w0x - sx, w0y - sy
+
+            goal_len = math.hypot(to_goal_x, to_goal_y)
+            wp0_len  = math.hypot(to_wp0_x,  to_wp0_y)
+
+            if goal_len > 1e-4 and wp0_len > 1e-4:
+                dot = (to_goal_x * to_wp0_x + to_goal_y * to_wp0_y) / (goal_len * wp0_len)
+                dot = max(-1.0, min(1.0, dot))   # clamp for acos safety
+                angle_deg = math.degrees(math.acos(dot))
+                if angle_deg > 90.0:
+                    print(f"[A*] Skipping unstable first waypoint "
+                          f"(angle to goal direction: {angle_deg:.1f}° > 90°)")
+                    self.waypoints.pop(0)
+                else:
+                    print(f"[A*] First waypoint OK (angle to goal: {angle_deg:.1f}°)")
 
         print(f"[A*] Waypoint plan ({len(self.waypoints)} waypoints):")
         for i, wp in enumerate(self.waypoints):
@@ -797,21 +846,23 @@ class SingleDroneNavigation:
 
     def _move_toward_target(self):
         """
-        KINEMATIC FLIGHT MODEL — replaces the old instant supervisor-teleport step.
+        KINEMATIC FLIGHT MODEL with stabilisation layer.
 
         Algorithm (per step):
-          1. Select steering target (current A* waypoint or final target).
-          2. Compute desired heading angle toward target.
-          3. Blend in obstacle repulsion to deflect desired heading.
-          4. Rotate current_yaw toward desired yaw by at most max_turn_rate.
-          5. Compute desired speed (cruise or decel ramp near waypoint).
-          6. Compute desired vx/vy from heading + speed.
-          7. Accelerate vx/vy toward desired by at most max_acceleration.
-          8. Integrate position: x += vx, y += vy.
-          9. Z kinematic: gently drive vz toward (altitude - z) and integrate.
+          1.  Select steering target (current A* waypoint or final target).
+          2.  Compute raw desired heading toward target.
+          3.  Obstacle repulsion — GATED: active only inside emergency_radius
+              when A* is enabled (Task 3).  Full repulsion when A* disabled.
+          4.  Low-pass filter desired_yaw (Task 4 — yaw_smoothing_alpha).
+          5.  Rotate current_yaw toward filtered desired_yaw by max_turn_rate.
+          6.  Desired speed: cruise or decel ramp near WP.
+          7.  Velocity damping inside wp_damping_radius (Task 5).
+          8.  Accelerate vx/vy toward desired by max_acceleration.
+          9.  Integrate position: x += vx, y += vy.
+          10. Z kinematic hold.
 
         Stores telemetry in self.last_* for HUD display.
-        Returns the new [x, y, z] position (same interface as before).
+        Returns new [x, y, z] position.
         """
         cur = list(self.uav_tf.getSFVec3f())
 
@@ -827,8 +878,10 @@ class SingleDroneNavigation:
 
         # Already on target — bleed off velocity and hold
         if horiz_dist < 1e-4:
-            self.last_avoiding    = False
-            self.last_steer_vec   = (0.0, 0.0)
+            self.last_avoiding      = False
+            self.last_steer_vec     = (0.0, 0.0)
+            self.last_avoidance_mode= "DISABLED"
+            self.last_motion_state  = "HOLD"
             self.vx *= 0.7
             self.vy *= 0.7
             self.vz *= 0.7
@@ -839,55 +892,87 @@ class SingleDroneNavigation:
             self.last_turn_rate   = 0.0
             return [cur[0] + self.vx, cur[1] + self.vy, self.altitude]
 
-        # ── 2. Desired heading toward target ──────────────────────────────
-        desired_yaw = math.atan2(dy, dx)
+        # ── 2. Raw desired heading toward target ─────────────────────────
+        raw_desired_yaw = math.atan2(dy, dx)
 
-        # ── 3. Obstacle repulsion — deflect desired heading ───────────────
+        # ── 3. Obstacle repulsion — gated by emergency_radius (Task 3) ───
         closest_name, min_dist, bx, by = self._check_collision_distance(cur)
         self.last_avoiding = False
 
-        if closest_name and min_dist < self.safety_radius:
+        if self.astar_enabled:
+            # A* is in control — only intervene in true emergencies
+            avoidance_active = closest_name and min_dist < self.emergency_radius
+            avoidance_mode   = "EMERGENCY" if avoidance_active else "DISABLED"
+        else:
+            # No A*: full reactive avoidance at safety_radius
+            avoidance_active = closest_name and min_dist < self.safety_radius
+            avoidance_mode   = "FULL" if avoidance_active else "DISABLED"
+
+        if avoidance_active:
             self.last_avoiding = True
             rx = cur[0] - bx
             ry = cur[1] - by
             r_dist = math.hypot(rx, ry)
             if r_dist > 1e-4:
-                # Blend repulsion into desired direction, then re-derive yaw
                 blend_x = (dx / horiz_dist) * self.target_strength + \
                           (rx / r_dist) * self.avoidance_strength
                 blend_y = (dy / horiz_dist) * self.target_strength + \
                           (ry / r_dist) * self.avoidance_strength
                 bl = math.hypot(blend_x, blend_y)
                 if bl > 1e-4:
-                    desired_yaw = math.atan2(blend_y / bl, blend_x / bl)
+                    raw_desired_yaw = math.atan2(blend_y / bl, blend_x / bl)
 
-        # ── 4. Smooth yaw toward desired_yaw (max_turn_rate per step) ─────
+        self.last_avoidance_mode = avoidance_mode
+
+        # ── 4. Low-pass filter on desired_yaw (Task 4) ───────────────────
+        # Initialise filter state on first step from current heading
+        if self._filtered_desired_yaw is None:
+            self._filtered_desired_yaw = raw_desired_yaw
+
+        # Wrap difference so filter interpolates the short way around the circle
+        yaw_diff = raw_desired_yaw - self._filtered_desired_yaw
+        while yaw_diff >  math.pi: yaw_diff -= 2.0 * math.pi
+        while yaw_diff < -math.pi: yaw_diff += 2.0 * math.pi
+        self._filtered_desired_yaw += self.yaw_smoothing_alpha * yaw_diff
+        # Keep filtered yaw in (-pi, pi]
+        while self._filtered_desired_yaw >  math.pi: self._filtered_desired_yaw -= 2.0 * math.pi
+        while self._filtered_desired_yaw < -math.pi: self._filtered_desired_yaw += 2.0 * math.pi
+
+        desired_yaw = self._filtered_desired_yaw
+
+        # ── 5. Smooth yaw toward filtered desired_yaw (max_turn_rate per step) ─
         delta_yaw = desired_yaw - self.current_yaw
-        # Wrap delta to (-pi, pi)
         while delta_yaw >  math.pi: delta_yaw -= 2.0 * math.pi
         while delta_yaw < -math.pi: delta_yaw += 2.0 * math.pi
         turn = max(-self.max_turn_rate, min(self.max_turn_rate, delta_yaw))
         self.current_yaw += turn
         self.last_turn_rate = turn
-        # Keep yaw in (-pi, pi]
         while self.current_yaw >  math.pi: self.current_yaw -= 2.0 * math.pi
         while self.current_yaw < -math.pi: self.current_yaw += 2.0 * math.pi
 
-        # ── 5. Desired speed with deceleration ramp near waypoint ─────────
+        # ── 6. Desired speed with deceleration ramp near waypoint ─────────
+        motion_state = "CRUISE"
         if horiz_dist < self.decel_radius:
-            # Linear ramp: full cruise at decel_radius, approaching 0 at target.
-            # Floor prevents getting stuck at tiny but non-zero distance.
             ramp_frac = max(0.05, horiz_dist / self.decel_radius)
             desired_speed = self.cruise_velocity * ramp_frac
+            motion_state = "DECEL"
         else:
             desired_speed = self.cruise_velocity
         desired_speed = min(desired_speed, self.max_velocity)
 
-        # ── 6. Desired velocity vector from heading + speed ───────────────
+        # ── 7. Velocity damping near waypoint to kill oscillation (Task 5) ──
+        if horiz_dist < self.wp_damping_radius:
+            self.vx *= self.velocity_damping_factor
+            self.vy *= self.velocity_damping_factor
+            motion_state = "DAMP"
+
+        self.last_motion_state = motion_state
+
+        # ── 8. Desired velocity vector from heading + speed ───────────────
         desired_vx = math.cos(self.current_yaw) * desired_speed
         desired_vy = math.sin(self.current_yaw) * desired_speed
 
-        # ── 7. Accelerate toward desired velocity (bounded by max_accel) ──
+        # Accelerate toward desired velocity (bounded by max_accel)
         prev_vx, prev_vy = self.vx, self.vy
         ax = desired_vx - self.vx
         ay = desired_vy - self.vy
@@ -906,15 +991,14 @@ class SingleDroneNavigation:
             self.vx *= fac
             self.vy *= fac
 
-        # ── 8. Integrate XY position ──────────────────────────────────────
+        # ── 9. Integrate XY position ──────────────────────────────────────
         new_x = cur[0] + self.vx
         new_y = cur[1] + self.vy
 
-        # ── 9. Kinematic Z hold (simple — no PID, no motor thrust) ────────
+        # ── 10. Kinematic Z hold (no PID, no motor thrust) ────────────────
         z_error = self.altitude - cur[2]
-        # Gently accelerate vz toward the altitude error (spring-like)
-        desired_vz  = max(-self.max_acceleration * 2,
-                          min(self.max_acceleration * 2, z_error * 0.3))
+        desired_vz = max(-self.max_acceleration * 2,
+                         min(self.max_acceleration * 2, z_error * 0.3))
         dz = desired_vz - self.vz
         dz_clamped = max(-self.max_acceleration * 0.5,
                          min(self.max_acceleration * 0.5, dz))
@@ -923,11 +1007,18 @@ class SingleDroneNavigation:
 
         # ── Store HUD telemetry ───────────────────────────────────────────
         heading_unit = (math.cos(self.current_yaw), math.sin(self.current_yaw))
-        self.last_steer_vec = heading_unit
-        self.last_velocity  = (self.vx, self.vy)
-        self.last_speed     = math.hypot(self.vx, self.vy)
-        self.last_accel     = (ax, ay)
-        self.last_accel_mag = math.hypot(ax, ay)
+        self.last_steer_vec      = heading_unit
+        self.last_velocity       = (self.vx, self.vy)
+        self.last_speed          = math.hypot(self.vx, self.vy)
+        self.last_accel          = (ax, ay)
+        self.last_accel_mag      = math.hypot(ax, ay)
+        self.last_desired_yaw    = raw_desired_yaw
+        self.last_filtered_yaw   = desired_yaw
+        # Heading error: signed angle between current heading and filtered target
+        herr = desired_yaw - self.current_yaw
+        while herr >  math.pi: herr -= 2.0 * math.pi
+        while herr < -math.pi: herr += 2.0 * math.pi
+        self.last_heading_error_deg = math.degrees(herr)
 
         return [new_x, new_y, new_z]
 
@@ -994,20 +1085,30 @@ class SingleDroneNavigation:
                 self.state = self.STATE_ARRIVED
                 return True
 
-            # ── A* waypoint advance ───────────────────────────────────
+            # ── A* waypoint advance with hysteresis lock (Task 1) ────────
             if self.astar_enabled and self.waypoints:
                 wp = self.waypoints[self.current_wp_idx]
                 dist_to_wp = self._dist2(cur, wp)
-                if dist_to_wp <= self.waypoint_radius:
-                    # Reached this waypoint — advance to next
+
+                # Decrement hysteresis lock counter each step
+                if self._wp_lock_counter > 0:
+                    self._wp_lock_counter -= 1
+                    if self._wp_lock_counter == 0:
+                        print(f"  [WP_LOCK] Released — WP[{self.current_wp_idx:02d}] "
+                              f"now active  step={self.step_count}")
+
+                # Only advance when lock is not active
+                if dist_to_wp <= self.waypoint_radius and self._wp_lock_counter == 0:
                     prev_idx = self.current_wp_idx
                     if self.current_wp_idx < len(self.waypoints) - 1:
                         self.current_wp_idx += 1
                         new_wp = self.waypoints[self.current_wp_idx]
+                        self._wp_lock_counter = self.waypoint_reach_lock_steps
                         print(f"  [A*] WP[{prev_idx:02d}] reached -> advancing to "
                               f"WP[{self.current_wp_idx:02d}] "
                               f"({new_wp[0]:.1f}, {new_wp[1]:.1f})  "
                               f"step={self.step_count}")
+                        print(f"  [WP_LOCK] Active for {self._wp_lock_counter} steps")
 
             prev_pos = list(cur)
             new_pos  = self._move_toward_target()
@@ -1097,29 +1198,36 @@ class SingleDroneNavigation:
 
     def _log_status(self, pos, dist_to_target, closest_bldg=None, bldg_dist=999.0):
         """
-        Task 5: Formatted debug HUD printed every log_interval steps.
-        Provides a clear, fixed-width status panel for easy debugging.
-        Extended for kinematic model: adds speed, acceleration, yaw, turn rate.
+        Task 5/6: Formatted debug HUD printed every log_interval steps.
+        Extended with stabilisation metrics: heading error, yaw target,
+        filtered yaw, avoidance mode, motion state.
         """
-        avoiding_str  = "ACTIVE  " if getattr(self, 'last_avoiding', False) else "INACTIVE"
-        planner_str   = "A*" if self.astar_enabled else "Reactive-only"
-        vel           = getattr(self, 'last_velocity',  (0.0, 0.0))
-        spd           = getattr(self, 'last_speed',     0.0)
-        acc           = getattr(self, 'last_accel',     (0.0, 0.0))
-        acc_mag       = getattr(self, 'last_accel_mag', 0.0)
-        turn          = getattr(self, 'last_turn_rate', 0.0)
-        yaw_deg       = math.degrees(self.current_yaw)
+        planner_str     = "A*" if self.astar_enabled else "Reactive-only"
+        vel             = getattr(self, 'last_velocity',         (0.0, 0.0))
+        spd             = getattr(self, 'last_speed',            0.0)
+        acc             = getattr(self, 'last_accel',            (0.0, 0.0))
+        acc_mag         = getattr(self, 'last_accel_mag',        0.0)
+        turn            = getattr(self, 'last_turn_rate',        0.0)
+        yaw_deg         = math.degrees(self.current_yaw)
+        raw_yaw_deg     = math.degrees(getattr(self, 'last_desired_yaw',    0.0))
+        filt_yaw_deg    = math.degrees(getattr(self, 'last_filtered_yaw',   0.0))
+        herr_deg        = getattr(self, 'last_heading_error_deg', 0.0)
+        avoid_mode      = getattr(self, 'last_avoidance_mode',    'DISABLED')
+        motion_state    = getattr(self, 'last_motion_state',      'CRUISE')
+        wp_locked       = self._wp_lock_counter > 0
 
         # Waypoint info
         if self.astar_enabled and self.waypoints:
-            wp         = self.waypoints[self.current_wp_idx]
-            wp_idx_str = f"{self.current_wp_idx + 1} / {len(self.waypoints)}"
-            wp_pos_str = f"({wp[0]:.1f}, {wp[1]:.1f})"
-            dist_to_wp = self._dist2(pos, wp)
+            wp          = self.waypoints[self.current_wp_idx]
+            wp_idx_str  = f"{self.current_wp_idx + 1} / {len(self.waypoints)}"
+            wp_pos_str  = f"({wp[0]:.1f}, {wp[1]:.1f})"
+            dist_to_wp  = self._dist2(pos, wp)
+            lock_str    = f"LOCKED({self._wp_lock_counter})" if wp_locked else "OPEN"
         else:
-            wp_idx_str = "N/A"
-            wp_pos_str = "N/A"
-            dist_to_wp = dist_to_target
+            wp_idx_str  = "N/A"
+            wp_pos_str  = "N/A"
+            dist_to_wp  = dist_to_target
+            lock_str    = "N/A"
 
         # Nearest obstacle
         if closest_bldg and bldg_dist < 999.0:
@@ -1131,18 +1239,24 @@ class SingleDroneNavigation:
         print(f"\n\u2554{line}\u2557")
         print(f"\u2551  DRONE DEBUG STATUS          Step: {self.step_count:>6}        \u2551")
         print(f"\u2560{line}\u2563")
-        print(f"\u2551  Motion Model     : KINEMATIC (vel+accel)           \u2551")
+        print(f"\u2551  Motion Model     : KINEMATIC + STABILISATION         \u2551")
+        print(f"\u2551  Motion State     : {motion_state:<28} \u2551")
         print(f"\u2551  Planner          : {planner_str:<28} \u2551")
         print(f"\u2551  Mission State    : {self.state:<28} \u2551")
-        print(f"\u2551  Avoidance        : {avoiding_str:<28} \u2551")
+        print(f"\u2551  Avoidance Mode   : {avoid_mode:<28} \u2551")
         print(f"\u2551  Waypoint         : {wp_idx_str:<8}  -> {wp_pos_str:<16} \u2551")
+        print(f"\u2551  WP Lock          : {lock_str:<28} \u2551")
         print(f"\u2560{line}\u2563")
         print(f"\u2551  Current Pos      : ({pos[0]:7.2f}, {pos[1]:7.2f}, {pos[2]:5.2f})      \u2551")
         print(f"\u2551  Velocity (vx,vy) : ({vel[0]:+7.4f}, {vel[1]:+7.4f})           \u2551")
         print(f"\u2551  Speed            : {spd:7.4f} m/step  (max: {self.max_velocity:.3f})  \u2551")
         print(f"\u2551  Accel (ax,ay)    : ({acc[0]:+7.4f}, {acc[1]:+7.4f})           \u2551")
         print(f"\u2551  Accel magnitude  : {acc_mag:7.4f} m/step\u00b2 (max: {self.max_acceleration:.3f})\u2551")
-        print(f"\u2551  Yaw              : {yaw_deg:+8.2f} deg                       \u2551")
+        print(f"\u2560{line}\u2563")
+        print(f"\u2551  Yaw (current)    : {yaw_deg:+8.2f} deg                       \u2551")
+        print(f"\u2551  Yaw target (raw) : {raw_yaw_deg:+8.2f} deg                       \u2551")
+        print(f"\u2551  Yaw target (filt): {filt_yaw_deg:+8.2f} deg                       \u2551")
+        print(f"\u2551  Heading error    : {herr_deg:+8.2f} deg                       \u2551")
         print(f"\u2551  Turn rate        : {math.degrees(turn):+7.3f} deg/step (max: {math.degrees(self.max_turn_rate):.1f})\u2551")
         print(f"\u2560{line}\u2563")
         print(f"\u2551  Altitude         : {pos[2]:6.2f} m   (target={self.altitude:.1f} m)       \u2551")
