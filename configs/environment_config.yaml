@@ -166,8 +166,6 @@ baseline_navigation:
   show_waypoint_markers: true  # spawn visual debug Solid spheres in Webots
 
   # ── Kinematic Flight Model ───────────────────────────────────────────
-  # Bridge between teleport and full physics — velocity+acceleration model.
-  # DO NOT enable motor thrust or PID yet.
   max_velocity:     0.5      # m/step  — absolute speed cap
   cruise_velocity:  0.3      # m/step  — nominal cruise speed (overrides cruise_speed)
   max_acceleration: 0.05     # m/step² — acceleration AND deceleration cap
@@ -184,6 +182,75 @@ baseline_navigation:
   velocity_damping_factor:   0.92  # multiplier applied each step inside wp_damping_radius
   waypoint_reach_lock_steps: 8     # steps to lock WP advance after reaching a WP
                                        #     prevents flip-flop oscillation at WP boundary
+
+  # ── Collision Safety Layer ────────────────────────────────────────
+  # Emergency fail-safe only — primary avoidance is now LocalAvoidanceSensor.
+  # Does NOT modify A* or kinematic parameters — purely additive.
+  collision_safety:
+    enabled: true
+
+    # Dual inflation radii (metres added to each building's geometric radius)
+    planner_inflation_radius: 2.0   # used by A* grid rasterisation (same as obstacle_inflation)
+    safety_inflation_radius:  5.0   # larger world-space margin used by CollisionSafetyLayer
+
+    # Segment collision validation
+    # Before the drone commits to current_pos → next_waypoint, the segment
+    # is sampled at `segment_samples` evenly-spaced points and tested against
+    # safety_inflation_radius.  A blocked segment triggers a fallback.
+    segment_samples:          30    # number of sample points along segment
+    segment_blocked_fallback: "nearest_free"   # "nearest_free" or "skip"
+
+    # Emergency local avoidance state machine
+    # SAFE     : dist_to_surface > danger_radius   — A* steers, no repulsion
+    # WARNING  : danger_radius >= dist > emergency_radius  — half repulsion
+    # EMERGENCY: dist <= emergency_radius  — full repulsion override
+    danger_radius:            8.0   # m from building surface → WARNING state
+    repulsion_emergency_radius: 4.0 # m from building surface → EMERGENCY state
+    repulsion_strength:       2.5   # multiplier for repulsion blend in EMERGENCY
+    repulsion_strength_warn:  0.8   # multiplier for repulsion blend in WARNING
+    repulsion_smoothing:      0.30  # low-pass alpha on repulsion vector (0=frozen, 1=instant)
+                                    # keeps vector smooth — prevents oscillation/shaking
+
+    # Debug visualization (Webots scene)
+    show_inflated_obstacles:  true  # spawn translucent red rings at safety_inflation_radius
+    show_avoidance_vector:    true  # print avoidance vector magnitude in HUD
+
+  # ── Local Avoidance Sensor (drone-centered, Phase-1) ─────────────
+  # PRIMARY collision avoidance layer — 8 geometric rays cast from drone.
+  # Blends with A* direction: final = astar_weight*A* + avoidance_weight*avoid
+  # CollisionSafetyLayer above retained as last-resort emergency fail-safe only.
+  # Architecture modular — upgrade to real Webots sensors in Phase-2 without
+  # touching A* or kinematic model.
+  local_avoidance:
+    enabled: true
+    sensor_distance: 14.0       # m — ray cast length (increased 10→14 for earlier detection)
+    ray_samples:     20         # sample points per ray (higher = finer hit detection)
+
+    # Blend weights (astar_weight + avoidance_weight should sum to 1.0)
+    # Increased avoidance weight 0.25→0.35 so avoidance is strong enough to prevent clipping
+    astar_weight:    0.65       # A* global direction contribution
+    avoidance_weight: 0.35      # local avoidance direction contribution
+
+    # Repulsion intensity — power-law falloff: weight = (1 - hit_frac)^falloff
+    # Higher falloff = stronger reaction near obstacle, weaker reaction at range
+    repulsion_falloff: 2.0
+
+    # Low-pass filter on avoidance vector (prevents jitter/oscillation)
+    # 0.0 = frozen (no reaction), 1.0 = instant (no smoothing)
+    smoothing_alpha: 0.35
+
+    # Predictive avoidance: also cast rays from a forward-projected position
+    # future_pos = current_pos + velocity * prediction_steps
+    # Blends current + predicted raycasts so buildings are detected earlier.
+    prediction_steps: 12        # steps to project ahead (configurable, 0 = disabled)
+
+    # Debug visualization — colored ray-tip spheres in Webots scene
+    debug_rays: true
+
+    # Color thresholds (based on hit_fraction = hit_step / ray_samples)
+    # hit_fraction=0 = obstacle at drone, 1.0 = clear
+    yellow_threshold: 0.60      # hit_fraction < this → yellow (nearby)
+    red_threshold:    0.30      # hit_fraction < this → red (blocked/close)
 
 
 rl:
