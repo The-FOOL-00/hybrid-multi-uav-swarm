@@ -619,13 +619,18 @@ class SingleDroneNavigation:
         )
         start_xy = (self.start_pos[0], self.start_pos[1])
         
-        # Define lawnmower sweep key waypoints aligned with road intersections
+        # Define lawnmower sweep key waypoints covering the full 200m x 200m world along street centerlines
         sweep_targets = [
-            [-40.0, -40.0],
-            [0.0, -40.0],
-            [0.0, 40.0],
-            [40.0, 40.0],
-            [40.0, -40.0],
+            [-90.0, -80.0],
+            [90.0, -80.0],
+            [90.0, -40.0],
+            [-90.0, -40.0],
+            [-90.0, 0.0],
+            [90.0, 0.0],
+            [90.0, 40.0],
+            [-90.0, 40.0],
+            [-90.0, 80.0],
+            [90.0, 80.0],
             [self.target_pos[0], self.target_pos[1]]
         ]
 

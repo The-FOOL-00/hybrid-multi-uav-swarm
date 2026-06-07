@@ -162,7 +162,7 @@ baseline_navigation:
   grid_resolution: 2.0         # metres per grid cell  (smaller = finer, slower)
   grid_margin: 90.0            # half-width of grid world (cells from -90 to +90 m)
   obstacle_inflation: 2.0      # extra metres added to building radii when marking cells
-  waypoint_radius: 4.0         # metres — advance to next waypoint when dist < this
+  waypoint_radius: 2.5         # metres — advance to next waypoint when dist < this
   show_waypoint_markers: true  # spawn visual debug Solid spheres in Webots
 
   # ── Kinematic Flight Model ───────────────────────────────────────────
