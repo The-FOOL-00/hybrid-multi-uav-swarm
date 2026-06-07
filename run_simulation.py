@@ -93,10 +93,10 @@ Examples:
     )
     parser.add_argument(
         "--scenario",
-        default="downtown",
+        default="single_drone",
         choices=list(SCENARIOS.keys()),
         metavar="SCENARIO",
-        help=f"Scenario to load. Choices: {', '.join(SCENARIOS)} (default: downtown)",
+        help=f"Scenario to load. Choices: {', '.join(SCENARIOS)} (default: single_drone)",
     )
     parser.add_argument(
         "--headless",
