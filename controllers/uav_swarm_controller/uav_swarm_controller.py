@@ -294,6 +294,823 @@ class AStarPlanner:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# COLLISION SAFETY LAYER
+# ══════════════════════════════════════════════════════════════════════════════
+class CollisionSafetyLayer:
+    """
+    Modular collision safety layer that sits between the kinematic flight model
+    and the A* planner.  It is a pure-logic class — it NEVER writes to Webots
+    fields directly; all writes remain in SingleDroneNavigation.
+
+    Responsibilities
+    ----------------
+    1. Segment validation        : check_segment(p1, p2) — sample N world-space
+       points; return False if any point is inside a safety-inflated building.
+    2. Nearest safe fallback     : nearest_safe_waypoint() — binary-search along
+       the blocked segment for the last safe point, used as a fallback WP.
+    3. Collision state machine   : get_collision_state() — returns
+       "SAFE" / "WARNING" / "EMERGENCY" based on distance to nearest building surface.
+    4. Smooth repulsion vector   : compute_repulsion() — blends away from the
+       nearest building with a low-pass filter to prevent oscillation/shaking.
+    5. Debug info                : get_debug_info() — dict consumed by HUD.
+    6. Debug visuals             : spawn_inflation_visuals() — optional translucent
+       red rings around each building at the safety radius (called once at init).
+
+    Design Constraints
+    ------------------
+    - Zero coupling to A* internals.
+    - Zero coupling to kinematic model state.
+    - Future planners (RRT, Dijkstra, PotentialField) can call the same API.
+    - All state is encapsulated here except for buildings list (shared reference).
+    """
+
+    SAFE      = "SAFE"
+    WARNING   = "WARNING"
+    EMERGENCY = "EMERGENCY"
+
+    def __init__(self, buildings: list, cfg: dict):
+        """
+        Parameters
+        ----------
+        buildings : list of dict
+            Each dict must have keys ``x``, ``y``, ``r`` (world coords + radius).
+            This is the RAW geometric radius — NOT inflated by A*.
+        cfg : dict
+            The ``collision_safety`` sub-dict from environment_config.yaml.
+        """
+        self.enabled = bool(cfg.get("enabled", True))
+
+        # Dual inflation radii (metres added to geometric radius)
+        self.planner_inflation  = float(cfg.get("planner_inflation_radius", 2.0))
+        self.safety_inflation   = float(cfg.get("safety_inflation_radius",  5.0))
+
+        # Safety-inflated building list (used for all world-space checks)
+        self.buildings_raw      = buildings
+        self.buildings_safe     = [
+            {"name": b["name"], "x": b["x"], "y": b["y"],
+             "r": b["r"] + self.safety_inflation}
+            for b in buildings
+        ]
+
+        # Segment validation
+        self.segment_samples    = int(cfg.get("segment_samples", 30))
+        self.fallback_mode      = str(cfg.get("segment_blocked_fallback", "nearest_free"))
+
+        # State-machine thresholds (distances from BUILDING SURFACE)
+        self.danger_radius      = float(cfg.get("danger_radius",             8.0))
+        self.emergency_radius   = float(cfg.get("repulsion_emergency_radius",4.0))
+
+        # Repulsion parameters
+        self.repulsion_strength      = float(cfg.get("repulsion_strength",      2.5))
+        self.repulsion_strength_warn = float(cfg.get("repulsion_strength_warn", 0.8))
+        self.repulsion_smoothing     = float(cfg.get("repulsion_smoothing",     0.30))
+
+        # Debug flags
+        self.show_inflated_obstacles = bool(cfg.get("show_inflated_obstacles", True))
+        self.show_avoidance_vector   = bool(cfg.get("show_avoidance_vector",   True))
+
+        # Low-pass filter state for repulsion vector (starts at zero)
+        self._smooth_rx = 0.0
+        self._smooth_ry = 0.0
+
+        # Last-computed debug data (cached each step for HUD)
+        self._last_state     = self.SAFE
+        self._last_nearest   = None    # (name, surface_dist, bx, by)
+        self._last_repulsion = (0.0, 0.0)
+
+        print(f"[CollisionSafety] Initialised — "
+              f"safety_radius=+{self.safety_inflation}m  "
+              f"danger={self.danger_radius}m  "
+              f"emergency={self.emergency_radius}m  "
+              f"buildings={len(buildings)}")
+
+    # ── Internal geometry helpers ────────────────────────────────────────────
+
+    def _nearest_building(self, pos) -> tuple:
+        """
+        Find the nearest building to `pos` using the SAFETY-inflated radii.
+
+        Returns
+        -------
+        (name, surface_distance, bx, by)
+        surface_distance = centre_dist − safety_inflated_radius
+        Negative value means the drone is INSIDE the inflated margin.
+        """
+        min_surf = float("inf")
+        nearest_name = None
+        bx, by = 0.0, 0.0
+        for b in self.buildings_safe:
+            centre_dist = math.hypot(pos[0] - b["x"], pos[1] - b["y"])
+            surf = centre_dist - b["r"]
+            if surf < min_surf:
+                min_surf = surf
+                nearest_name = b["name"]
+                bx, by = b["x"], b["y"]
+        return nearest_name, min_surf, bx, by
+
+    def _point_blocked(self, x: float, y: float) -> bool:
+        """True if (x, y) is inside ANY safety-inflated building."""
+        for b in self.buildings_safe:
+            if math.hypot(x - b["x"], y - b["y"]) <= b["r"]:
+                return True
+        return False
+
+    # ── Public API ───────────────────────────────────────────────────────────
+
+    def check_segment(self, p1, p2) -> bool:
+        """
+        Sample ``segment_samples`` evenly-spaced points along the 2-D segment
+        p1 → p2 and test each against the safety-inflated building footprints.
+
+        Parameters
+        ----------
+        p1, p2 : sequence of at least 2 floats (x, y, ...)
+
+        Returns
+        -------
+        True  — segment is clear (safe to fly)
+        False — segment is blocked (one or more sample points inside safety margin)
+        """
+        if not self.enabled:
+            return True
+
+        x1, y1 = p1[0], p1[1]
+        x2, y2 = p2[0], p2[1]
+        n = self.segment_samples
+
+        for i in range(n + 1):
+            t  = i / n
+            sx = x1 + t * (x2 - x1)
+            sy = y1 + t * (y2 - y1)
+            if self._point_blocked(sx, sy):
+                return False
+        return True
+
+    def nearest_safe_waypoint(self, drone_pos, blocked_wp) -> list:
+        """
+        Binary-search along drone_pos → blocked_wp for the last safe point.
+        Returns a world-space [x, y, z] fallback waypoint at 90 % of the
+        safe length (providing a small buffer).
+
+        Falls back to drone_pos itself if even the first sample is blocked.
+        """
+        x1, y1, z1 = drone_pos[0], drone_pos[1], drone_pos[2]
+        x2, y2     = blocked_wp[0], blocked_wp[1]
+        z2         = blocked_wp[2] if len(blocked_wp) > 2 else z1
+
+        lo, hi = 0.0, 1.0
+        # Binary-search for the largest safe t
+        for _ in range(12):   # 12 bisection steps → precision ~0.02 % of length
+            mid = (lo + hi) / 2.0
+            mx  = x1 + mid * (x2 - x1)
+            my  = y1 + mid * (y2 - y1)
+            if self._point_blocked(mx, my):
+                hi = mid
+            else:
+                lo = mid
+
+        # Use 90 % of the safe fraction to keep a small buffer
+        t_safe = lo * 0.90
+        if t_safe < 0.01:   # essentially at start — can't move toward WP
+            return [x1, y1, z1]
+
+        return [
+            x1 + t_safe * (x2 - x1),
+            y1 + t_safe * (y2 - y1),
+            z1 + t_safe * (z2 - z1),
+        ]
+
+    def get_collision_state(self, drone_pos) -> str:
+        """
+        Return one of SAFE / WARNING / EMERGENCY based on proximity to the
+        nearest safety-inflated building surface.
+
+        Also caches the result in self._last_state for HUD consumption.
+
+        Improvement 6: emergency threshold tightened slightly so the state
+        machine flows SAFE → WARNING → smooth steering → SAFE rather than
+        jumping straight to EMERGENCY.  The danger_radius (WARNING band) is
+        now evaluated against a slightly widened window so the drone has more
+        time to react before reaching the hard EMERGENCY zone.
+        """
+        if not self.enabled:
+            self._last_state = self.SAFE
+            return self.SAFE
+
+        name, surf_dist, bx, by = self._nearest_building(drone_pos)
+        self._last_nearest = (name, surf_dist, bx, by)
+
+        # Improvement 6: use a slightly tighter emergency band (emergency_radius * 0.75)
+        # so EMERGENCY only fires when VERY close; WARNING covers a wider range.
+        # danger_radius is unchanged — WARNING still starts at the same outer edge.
+        effective_emergency = self.emergency_radius * 0.75
+        if surf_dist <= effective_emergency:
+            self._last_state = self.EMERGENCY
+        elif surf_dist <= self.danger_radius:
+            self._last_state = self.WARNING
+        else:
+            self._last_state = self.SAFE
+
+        return self._last_state
+
+    def compute_repulsion(self, drone_pos) -> tuple:
+        """
+        Compute a smooth repulsion vector pushing the drone away from the
+        nearest building.  The raw vector is low-pass filtered to eliminate
+        oscillation in tight corridors.
+
+        Returns
+        -------
+        (rx, ry) — normalised repulsion direction (magnitude ≈ 1.0 when active,
+                   0.0 when SAFE and filter has decayed).
+        """
+        if not self.enabled or self._last_nearest is None:
+            self._smooth_rx = 0.0
+            self._smooth_ry = 0.0
+            self._last_repulsion = (0.0, 0.0)
+            return (0.0, 0.0)
+
+        name, surf_dist, bx, by = self._last_nearest
+
+        # Raw repulsion: away from building centre
+        raw_rx = drone_pos[0] - bx
+        raw_ry = drone_pos[1] - by
+        r_len  = math.hypot(raw_rx, raw_ry)
+
+        if r_len < 1e-4 or self._last_state == self.SAFE:
+            # Decay filter toward zero when safe
+            target_rx, target_ry = 0.0, 0.0
+        else:
+            target_rx = raw_rx / r_len
+            target_ry = raw_ry / r_len
+
+        # Low-pass filter (prevents oscillation/shaking)
+        alpha = self.repulsion_smoothing
+        self._smooth_rx += alpha * (target_rx - self._smooth_rx)
+        self._smooth_ry += alpha * (target_ry - self._smooth_ry)
+
+        # Normalise filtered vector
+        filt_len = math.hypot(self._smooth_rx, self._smooth_ry)
+        if filt_len > 1e-4:
+            nx = self._smooth_rx / filt_len
+            ny = self._smooth_ry / filt_len
+        else:
+            nx, ny = 0.0, 0.0
+
+        self._last_repulsion = (nx, ny)
+        return (nx, ny)
+
+    def get_repulsion_strength(self) -> float:
+        """Return the appropriate repulsion multiplier for the current state."""
+        if self._last_state == self.EMERGENCY:
+            return self.repulsion_strength
+        elif self._last_state == self.WARNING:
+            return self.repulsion_strength_warn
+        return 0.0
+
+    def get_debug_info(self) -> dict:
+        """
+        Return a snapshot of the current collision state for HUD display.
+
+        Returns
+        -------
+        dict with keys:
+            state          — "SAFE" / "WARNING" / "EMERGENCY"
+            nearest_name   — name of closest building (or None)
+            surface_dist   — metres from drone centre to nearest surface
+            danger_radius  — configured threshold
+            emergency_radius — configured threshold
+            repulsion_vec  — (rx, ry) filtered repulsion direction
+            repulsion_mag  — magnitude of repulsion vector
+        """
+        nearest_name = None
+        surf_dist    = float("inf")
+        if self._last_nearest is not None:
+            nearest_name = self._last_nearest[0]
+            surf_dist    = self._last_nearest[1]
+
+        rx, ry = self._last_repulsion
+        return {
+            "state":            self._last_state,
+            "nearest_name":     nearest_name,
+            "surface_dist":     surf_dist,
+            "danger_radius":    self.danger_radius,
+            "emergency_radius": self.emergency_radius,
+            "repulsion_vec":    (rx, ry),
+            "repulsion_mag":    math.hypot(rx, ry),
+        }
+
+    # ── Debug visualisation ──────────────────────────────────────────────────
+
+    def spawn_inflation_visuals(self, supervisor) -> None:
+        """
+        Spawn translucent red cylindrical rings in the Webots scene to visualise
+        the safety-inflated obstacle boundaries.  Called once during initialisation
+        when show_inflated_obstacles is True.
+
+        Uses thin flat cylinders (disc-like) placed at drone cruise altitude so
+        they are visible from the chase-cam without obstructing the view.
+
+        VISUAL NOTE: The displayed radius is intentionally scaled down by
+        VISUAL_RADIUS_SCALE (≈0.70) relative to the internal safety radius.
+        This is purely cosmetic — it reduces clutter without changing the
+        actual collision-avoidance geometry in any way.
+        """
+        # ── Improvement 1: visual-only radius reduction (~30%) ────────────────
+        # Internal safety_inflation radius is unchanged.  Only the rendered
+        # cylinder is scaled so the red circles are less cluttered in the scene.
+        VISUAL_RADIUS_SCALE = 0.70   # cosmetic scale — does NOT affect collision logic
+
+        if not self.show_inflated_obstacles:
+            return
+        try:
+            root           = supervisor.getRoot()
+            children_field = root.getField("children")
+            spawned        = 0
+            for i, b in enumerate(self.buildings_safe):
+                r_internal = b["r"]                      # full safety radius (unchanged)
+                r_visual   = r_internal * VISUAL_RADIUS_SCALE  # reduced for display only
+                # Thin torus approximated as a flat hollow cylinder (ring) at altitude 15 m
+                node_str = (
+                    f'DEF SAFETY_RING_{i} Solid {{\n'
+                    f'  translation {b["x"]} {b["y"]} 15.0\n'
+                    f'  children [\n'
+                    f'    Shape {{\n'
+                    f'      appearance Appearance {{\n'
+                    f'        material Material {{\n'
+                    f'          diffuseColor 1.0 0.1 0.05\n'
+                    f'          emissiveColor 0.6 0.0 0.0\n'
+                    f'          transparency 0.55\n'
+                    f'        }}\n'
+                    f'      }}\n'
+                    f'      geometry Cylinder {{ radius {r_visual:.3f} height 0.25 }}\n'
+                    f'    }}\n'
+                    f'  ]\n'
+                    f'  name "safety_ring_{i}"\n'
+                    f'  contactMaterial "default"\n'
+                    f'  physics NULL\n'
+                    f'}}\n'
+                )
+                children_field.importMFNodeFromString(-1, node_str)
+                spawned += 1
+            print(f"[CollisionSafety] Spawned {spawned} safety-radius rings "
+                  f"(safety_inflation=+{self.safety_inflation}m internal, "
+                  f"visual={VISUAL_RADIUS_SCALE*100:.0f}% of internal, translucent red).")
+        except Exception as e:
+            print(f"[CollisionSafety] Could not spawn inflation visuals (non-fatal): {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOCAL AVOIDANCE SENSOR  (Phase-1, drone-centered)
+# ══════════════════════════════════════════════════════════════════════════════
+class LocalAvoidanceSensor:
+    """
+    Drone-centered virtual 8-ray obstacle sensor for Phase-1 local avoidance.
+
+    Design Principles
+    -----------------
+    - 8 directional rays cast geometrically — NO Webots hardware sensors.
+    - Rays are aligned to world-space, rotated by current drone yaw so
+      "front" always means the direction the drone is heading.
+    - Power-law repulsion falloff: obstacles closer to the drone exert
+      stronger repulsion than distant ones — no binary on/off transitions.
+    - Low-pass filter on the final avoidance vector prevents jitter and
+      oscillation in tight corridors.
+    - Output is a blended direction: 0.75 × A* + 0.25 × avoidance.
+      A* is NEVER overridden — this is a steering correction only.
+    - Ray-tip spheres in Webots scene provide real-time visual feedback:
+        GREEN  = clear
+        YELLOW = nearby obstacle (within yellow_threshold fraction)
+        RED    = close / blocked (within red_threshold fraction)
+    - Zero coupling to A* internals or kinematic model state.
+    - Designed for easy upgrade to real Webots DistanceSensor in Phase-2.
+
+    Ray Directions (angles from East axis, ENU, rotated by drone yaw)
+    -------------------------------------------------------------------
+    Index  Label         Base Angle (rad)
+      0    front          0.0
+      1    front-left     π/4
+      2    left           π/2
+      3    rear-left      3π/4
+      4    rear           π
+      5    rear-right    -3π/4
+      6    right         -π/2
+      7    front-right   -π/4
+    """
+
+    # 8 ray definitions: (label, base_angle_rad)
+    RAY_DEFS = [
+        ("front",        0.0),
+        ("front-left",   math.pi / 4.0),
+        ("left",         math.pi / 2.0),
+        ("rear-left",    3.0 * math.pi / 4.0),
+        ("rear",         math.pi),
+        ("rear-right",  -3.0 * math.pi / 4.0),
+        ("right",       -math.pi / 2.0),
+        ("front-right", -math.pi / 4.0),
+    ]
+    NUM_RAYS = 8
+
+    # Improvement 3: Directional ray weights — front rays dominate steering.
+    # Front-facing rays exert the most steering correction; rear rays barely
+    # contribute.  This makes the drone steer around buildings earlier instead
+    # of reacting only when the obstacle is directly ahead.
+    RAY_WEIGHTS = {
+        "front":       1.00,
+        "front-left":  0.85,
+        "front-right": 0.85,
+        "left":        0.55,
+        "right":       0.55,
+        "rear-left":   0.20,
+        "rear-right":  0.20,
+        "rear":        0.10,
+    }
+
+    def __init__(self, buildings: list, cfg: dict):
+        """
+        Parameters
+        ----------
+        buildings : list of dict
+            Each dict must have keys ``x``, ``y``, ``r`` (world coords + radius).
+            Pass the RAW (un-inflated) building list from _init_buildings().
+        cfg : dict
+            The ``local_avoidance`` sub-dict from environment_config.yaml.
+        """
+        self.enabled          = bool(cfg.get("enabled", True))
+        # Improvement 2: default sensor distance raised from 10 → 14 m
+        self.sensor_distance  = float(cfg.get("sensor_distance", 14.0))
+        self.ray_samples      = int(cfg.get("ray_samples", 20))
+        # Improvement 5: default blend shifted from 0.75/0.25 → 0.65/0.35
+        self.astar_weight     = float(cfg.get("astar_weight", 0.65))
+        self.avoidance_weight = float(cfg.get("avoidance_weight", 0.35))
+        self.repulsion_falloff= float(cfg.get("repulsion_falloff", 2.0))
+        self.smoothing_alpha  = float(cfg.get("smoothing_alpha", 0.35))
+        self.debug_rays       = bool(cfg.get("debug_rays", True))
+        self.yellow_threshold = float(cfg.get("yellow_threshold", 0.60))
+        self.red_threshold    = float(cfg.get("red_threshold", 0.30))
+        # Improvement 4: predictive avoidance — number of velocity steps to project ahead
+        # 0 = disabled (pure current-position raycasting only)
+        self.prediction_steps = int(cfg.get("prediction_steps", 12))
+
+        self.buildings        = buildings   # raw geometric buildings
+
+        # Low-pass filter state for avoidance vector
+        self._smooth_ax = 0.0
+        self._smooth_ay = 0.0
+
+        # Per-ray result cache (updated each step) — list of dicts
+        # Each: {label, hit, hit_fraction, hit_x, hit_y, ray_angle}
+        self._ray_results = [
+            {"label": lbl, "hit": False, "hit_fraction": 1.0,
+             "hit_x": 0.0, "hit_y": 0.0, "ray_angle": ang}
+            for lbl, ang in self.RAY_DEFS
+        ]
+
+        # Last computed debug info
+        self._last_avoidance_vec = (0.0, 0.0)
+        self._last_active        = False
+        self._last_nearest_ray   = "none"
+        self._last_nearest_dist  = float("inf")
+
+        # Webots scene node references for ray visualization
+        # Populated by spawn_ray_visuals() — None until then
+        self._ray_tf_fields = [None] * self.NUM_RAYS   # translation fields
+        self._ray_mat_fields= [None] * self.NUM_RAYS   # emissiveColor fields
+
+        print(f"[LocalAvoidance] Initialised — "
+              f"sensor={self.sensor_distance}m  "
+              f"samples={self.ray_samples}  "
+              f"blend=A*{self.astar_weight}+avoid{self.avoidance_weight}  "
+              f"lpf_alpha={self.smoothing_alpha}  "
+              f"prediction_steps={self.prediction_steps}  "
+              f"debug_rays={'ON' if self.debug_rays else 'OFF'}")
+
+    # ── Ray casting ──────────────────────────────────────────────────────────
+
+    def _cast_ray(self, ox: float, oy: float, angle: float) -> dict:
+        """
+        Cast a single ray from (ox, oy) in world direction `angle` (radians).
+
+        Samples `ray_samples` evenly-spaced points from 0 to sensor_distance.
+        Tests each sample point against all building circles.
+
+        Returns
+        -------
+        dict with keys:
+            hit          — True if any sample intersects a building
+            hit_fraction — normalised step index of first hit (0=drone, 1=clear)
+            hit_x, hit_y — world coords of first hit point (0 if no hit)
+        """
+        dx = math.cos(angle)
+        dy = math.sin(angle)
+        step_size = self.sensor_distance / self.ray_samples
+
+        for i in range(1, self.ray_samples + 1):
+            sx = ox + dx * step_size * i
+            sy = oy + dy * step_size * i
+            for b in self.buildings:
+                if math.hypot(sx - b["x"], sy - b["y"]) <= b["r"]:
+                    return {
+                        "hit":          True,
+                        "hit_fraction": i / self.ray_samples,
+                        "hit_x":        sx,
+                        "hit_y":        sy,
+                    }
+
+        # No hit — ray is clear
+        tip_x = ox + dx * self.sensor_distance
+        tip_y = oy + dy * self.sensor_distance
+        return {
+            "hit":          False,
+            "hit_fraction": 1.0,
+            "hit_x":        tip_x,
+            "hit_y":        tip_y,
+        }
+
+    # ── Per-step update ──────────────────────────────────────────────────────
+
+    def update(self, drone_pos, drone_yaw: float, drone_vx: float = 0.0, drone_vy: float = 0.0) -> None:
+        """
+        Cast all 8 rays from current drone position, compute and filter the
+        avoidance vector.  Call once per simulation step before querying
+        get_avoidance_vector() or get_debug_info().
+
+        Improvements applied here
+        -------------------------
+        3. Directional weighting — each ray's contribution is scaled by
+           RAY_WEIGHTS[label] so front rays dominate the steering correction.
+        4. Predictive avoidance — if prediction_steps > 0, a second set of
+           rays is cast from the projected future position:
+               future_pos = current_pos + (vx, vy) * prediction_steps
+           The current-position result and the future-position result are
+           blended 60 % current / 40 % predicted, giving the drone earlier
+           awareness of buildings that lie ahead.
+
+        Parameters
+        ----------
+        drone_pos : sequence of at least 2 floats (x, y, ...)
+        drone_yaw : float — current heading in radians (ENU yaw from East)
+        drone_vx, drone_vy : float — current XY velocity (m/step), used for
+            predictive raycasting.  Defaults to 0 (no prediction shift).
+        """
+        if not self.enabled:
+            return
+
+        ox, oy = drone_pos[0], drone_pos[1]
+
+        # ── Improvement 4: compute predicted origin (future position) ─────────
+        if self.prediction_steps > 0 and (abs(drone_vx) > 1e-5 or abs(drone_vy) > 1e-5):
+            px = ox + drone_vx * self.prediction_steps
+            py = oy + drone_vy * self.prediction_steps
+            use_prediction = True
+        else:
+            px, py = ox, oy
+            use_prediction = False
+
+        # ── Cast rays from CURRENT position ──────────────────────────────────
+        raw_ax, raw_ay = 0.0, 0.0
+        nearest_frac   = 1.0
+        nearest_label  = "none"
+
+        for i, (lbl, base_angle) in enumerate(self.RAY_DEFS):
+            world_angle = drone_yaw + base_angle
+            result      = self._cast_ray(ox, oy, world_angle)
+
+            # Improvement 7: ray_results are the single source of truth for
+            # both visualization and HUD — always set hit/hit_fraction here.
+            self._ray_results[i]["label"]        = lbl
+            self._ray_results[i]["hit"]          = result["hit"]
+            self._ray_results[i]["hit_fraction"] = result["hit_fraction"]
+            self._ray_results[i]["hit_x"]        = result["hit_x"]
+            self._ray_results[i]["hit_y"]        = result["hit_y"]
+            self._ray_results[i]["ray_angle"]    = world_angle
+
+            if result["hit"]:
+                frac = result["hit_fraction"]
+                # Improvement 3: apply directional weight for this ray label
+                dir_weight = self.RAY_WEIGHTS.get(lbl, 1.0)
+                # Power-law falloff: closer hit → stronger repulsion weight
+                repulsion_weight = (1.0 - frac) ** self.repulsion_falloff * dir_weight
+                # Repulsion direction: opposite to the ray direction
+                raw_ax -= math.cos(world_angle) * repulsion_weight
+                raw_ay -= math.sin(world_angle) * repulsion_weight
+                # Track nearest hit
+                if frac < nearest_frac:
+                    nearest_frac  = frac
+                    nearest_label = lbl
+
+        self._last_nearest_ray  = nearest_label
+        self._last_nearest_dist = nearest_frac * self.sensor_distance
+
+        # ── Improvement 4: cast rays from PREDICTED position and blend ────────
+        if use_prediction:
+            pred_ax, pred_ay = 0.0, 0.0
+            for i, (lbl, base_angle) in enumerate(self.RAY_DEFS):
+                world_angle  = drone_yaw + base_angle
+                pred_result  = self._cast_ray(px, py, world_angle)
+                if pred_result["hit"]:
+                    frac = pred_result["hit_fraction"]
+                    dir_weight = self.RAY_WEIGHTS.get(lbl, 1.0)
+                    repulsion_weight = (1.0 - frac) ** self.repulsion_falloff * dir_weight
+                    pred_ax -= math.cos(world_angle) * repulsion_weight
+                    pred_ay -= math.sin(world_angle) * repulsion_weight
+                    # Widen nearest hit tracking if predicted hit is closer
+                    if frac < nearest_frac:
+                        nearest_frac  = frac
+                        nearest_label = lbl
+
+            # Blend 60 % current + 40 % predicted — give predicted result
+            # meaningful influence without dominating the immediate steering
+            raw_ax = raw_ax * 0.60 + pred_ax * 0.40
+            raw_ay = raw_ay * 0.60 + pred_ay * 0.40
+
+            # Update nearest with predictive result
+            self._last_nearest_ray  = nearest_label
+            self._last_nearest_dist = nearest_frac * self.sensor_distance
+
+        # Normalise raw avoidance vector before filtering
+        raw_mag = math.hypot(raw_ax, raw_ay)
+        if raw_mag > 1e-4:
+            target_ax = raw_ax / raw_mag
+            target_ay = raw_ay / raw_mag
+            self._last_active = True
+        else:
+            target_ax = 0.0
+            target_ay = 0.0
+            self._last_active = False
+
+        # Low-pass filter (prevents oscillation/jitter)
+        alpha = self.smoothing_alpha
+        self._smooth_ax += alpha * (target_ax - self._smooth_ax)
+        self._smooth_ay += alpha * (target_ay - self._smooth_ay)
+
+        # Normalise filtered vector
+        filt_mag = math.hypot(self._smooth_ax, self._smooth_ay)
+        if filt_mag > 1e-4:
+            fx = self._smooth_ax / filt_mag
+            fy = self._smooth_ay / filt_mag
+        else:
+            fx, fy = 0.0, 0.0
+
+        self._last_avoidance_vec = (fx, fy)
+
+    # ── Output API ───────────────────────────────────────────────────────────
+
+    def get_avoidance_vector(self) -> tuple:
+        """
+        Return the low-pass filtered, normalised avoidance direction.
+
+        Returns
+        -------
+        (ax, ay) — normalised direction to steer away from obstacles.
+                   (0, 0) when no obstacles detected and filter decayed.
+        """
+        return self._last_avoidance_vec
+
+    def is_active(self) -> bool:
+        """True if at least one ray detected an obstacle this step."""
+        return self._last_active
+
+    def get_debug_info(self) -> dict:
+        """
+        Return current sensor state snapshot for HUD and logging.
+
+        Returns
+        -------
+        dict with keys:
+            ray_results     — list of 8 ray result dicts
+            nearest_ray     — label of ray with shortest hit distance
+            nearest_dist_m  — distance in metres to nearest hit
+            avoidance_vec   — (ax, ay) filtered direction
+            avoidance_mag   — magnitude of avoidance vector
+            active          — bool: True if avoidance is non-zero this step
+        """
+        ax, ay = self._last_avoidance_vec
+        return {
+            "ray_results":    list(self._ray_results),
+            "nearest_ray":    self._last_nearest_ray,
+            "nearest_dist_m": self._last_nearest_dist,
+            "avoidance_vec":  (ax, ay),
+            "avoidance_mag":  math.hypot(ax, ay),
+            "active":         self._last_active,
+        }
+
+    # ── Debug visualisation ──────────────────────────────────────────────────
+
+    def spawn_ray_visuals(self, supervisor) -> None:
+        """
+        Spawn 8 small colored spheres in the Webots scene — one at each ray tip.
+        Spheres start green (clear).  Positions and colors are updated each step
+        by update_ray_visuals().
+
+        Uses DEF nodes LA_RAY_0 … LA_RAY_7.
+        Called once during _init_astar() after the scene is fully loaded.
+        Gracefully silently skips on any Webots API error.
+        """
+        if not self.debug_rays:
+            return
+        try:
+            root           = supervisor.getRoot()
+            children_field = root.getField("children")
+            spawned        = 0
+            for i in range(self.NUM_RAYS):
+                lbl = self.RAY_DEFS[i][0]
+                node_str = (
+                    f'DEF LA_RAY_{i} Solid {{\n'
+                    f'  translation 0 0 15.0\n'
+                    f'  children [\n'
+                    f'    Shape {{\n'
+                    f'      appearance Appearance {{\n'
+                    f'        material DEF LA_MAT_{i} Material {{\n'
+                    f'          diffuseColor 0.0 1.0 0.0\n'
+                    f'          emissiveColor 0.0 0.8 0.0\n'
+                    f'          shininess 0.9\n'
+                    f'        }}\n'
+                    f'      }}\n'
+                    f'      geometry Sphere {{ radius 0.5 }}\n'
+                    f'    }}\n'
+                    f'  ]\n'
+                    f'  name "la_ray_{i}_{lbl}"\n'
+                    f'  contactMaterial "default"\n'
+                    f'  physics NULL\n'
+                    f'}}\n'
+                )
+                children_field.importMFNodeFromString(-1, node_str)
+                node = supervisor.getFromDef(f"LA_RAY_{i}")
+                if node is not None:
+                    self._ray_tf_fields[i]  = node.getField("translation")
+                    # Material node is a child of the shape — access via getFromDef
+                    mat_node = supervisor.getFromDef(f"LA_MAT_{i}")
+                    if mat_node is not None:
+                        self._ray_mat_fields[i] = mat_node.getField("emissiveColor")
+                    spawned += 1
+            print(f"[LocalAvoidance] Spawned {spawned}/{self.NUM_RAYS} "
+                  f"ray visual nodes (green=clear, yellow=near, red=blocked).")
+        except Exception as e:
+            print(f"[LocalAvoidance] Ray visual spawn failed (non-fatal): {e}")
+
+    def update_ray_visuals(self, supervisor, drone_pos) -> None:
+        """
+        Move each ray-tip sphere to its current world position and
+        set its color based on hit state.
+
+        Color coding:
+            Green  (0.0, 0.8, 0.0) — no hit (clear)
+            Yellow (0.9, 0.8, 0.0) — hit_fraction >= red_threshold but < yellow_threshold
+            Red    (0.9, 0.1, 0.0) — hit_fraction < red_threshold (close/blocked)
+
+        Called each simulation step from SingleDroneNavigation.step().
+        """
+        if not self.debug_rays:
+            return
+
+        drone_z = drone_pos[2]
+
+        for i, rr in enumerate(self._ray_results):
+            tf  = self._ray_tf_fields[i]
+            mat = self._ray_mat_fields[i]
+            if tf is None:
+                continue
+
+            # Position: use hit point if hit, else ray tip
+            tip_x = rr["hit_x"]
+            tip_y = rr["hit_y"]
+            # If this ray was never cast (sensor disabled), fallback
+            if tip_x == 0.0 and tip_y == 0.0:
+                ang   = rr["ray_angle"]
+                tip_x = drone_pos[0] + math.cos(ang) * self.sensor_distance
+                tip_y = drone_pos[1] + math.sin(ang) * self.sensor_distance
+
+            try:
+                tf.setSFVec3f([tip_x, tip_y, drone_z])
+            except Exception:
+                pass
+
+            if mat is None:
+                continue
+
+            # Color based on hit_fraction
+            frac = rr["hit_fraction"]
+            if not rr["hit"]:
+                # Green — clear
+                color = [0.0, 0.85, 0.0]
+            elif frac < self.red_threshold:
+                # Red — close/blocked
+                color = [0.95, 0.05, 0.0]
+            elif frac < self.yellow_threshold:
+                # Yellow — nearby
+                color = [0.95, 0.85, 0.0]
+            else:
+                # Green — hit but far enough (beyond yellow threshold)
+                color = [0.0, 0.85, 0.0]
+
+            try:
+                mat.setSFColor(color)
+            except Exception:
+                pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SINGLE-DRONE NAVIGATION BASELINE
 # Phase 1 of the hybrid-multi-UAV-swarm development pipeline.
 # Deterministic start → target mission for engineering baseline validation.
@@ -462,6 +1279,29 @@ class SingleDroneNavigation:
         # Task 6 — ASCII minimap
         self._minimap_interval  = 200   # print minimap every N steps
 
+        # ── Collision Safety Layer ────────────────────────────────────────────
+        # Instantiated after _init_buildings() so self.test_buildings is ready.
+        # Falls back to an empty cfg (all defaults) if key is absent in YAML.
+        _safety_cfg = cfg.get("collision_safety", {})
+        self.safety_layer = CollisionSafetyLayer(
+            buildings = self.test_buildings,
+            cfg       = _safety_cfg,
+        )
+        # Cache debug-info dict for HUD (updated every step)
+        self._last_safety_info = self.safety_layer.get_debug_info()
+
+        # ── Local Avoidance Sensor ────────────────────────────────────────────
+        # Primary avoidance layer: 8 geometric rays around the drone.
+        # Blends correction with A* direction — A* is NEVER overridden.
+        # Falls back gracefully to empty dict if key absent in YAML.
+        _la_cfg = cfg.get("local_avoidance", {})
+        self.local_avoidance = LocalAvoidanceSensor(
+            buildings = self.test_buildings,
+            cfg       = _la_cfg,
+        )
+        # Cache debug-info dict for HUD (updated every step)
+        self._last_la_info = self.local_avoidance.get_debug_info()
+
         # Park UAV_1-4 at their initial positions so they don't drift
         self._park_inactive_uavs()
 
@@ -562,6 +1402,7 @@ class SingleDroneNavigation:
 
     def _print_banner(self):
         astar_mode = "A* + Local Avoidance" if self.astar_enabled else "Reactive avoidance only"
+        sl = self.safety_layer
         print("\n" + "=" * 64)
         print("  SINGLE DRONE NAVIGATION BASELINE  (Phase 1)")
         print("  NO RL  |  NO RANDOM PATROL  |  NO SWARM")
@@ -583,13 +1424,42 @@ class SingleDroneNavigation:
             print(f"  WP radius       : {self.waypoint_radius} m")
         print("  States       : TAKEOFF \u2192 NAVIGATE \u2192 ARRIVED")
         print("  -" * 32)
+        print("  COLLISION SAFETY LAYER:")
+        enabled_str = "ENABLED" if sl.enabled else "DISABLED"
+        print(f"    Status         : {enabled_str}")
+        print(f"    Planner infl.  : +{sl.planner_inflation} m  (A* grid)")
+        print(f"    Safety infl.   : +{sl.safety_inflation} m  (world-space checks)")
+        print(f"    Segment samples: {sl.segment_samples}")
+        print(f"    Danger radius  : {sl.danger_radius} m  (WARNING state)")
+        print(f"    Emergency rad. : {sl.emergency_radius} m  (EMERGENCY state)")
+        print(f"    Repulsion str. : WARN={sl.repulsion_strength_warn}  EMRG={sl.repulsion_strength}")
+        print(f"    Repulsion lpf  : alpha={sl.repulsion_smoothing}")
+        print(f"    Debug rings    : {'YES' if sl.show_inflated_obstacles else 'NO'}")
+        print("  -" * 32)
+        print("  LOCAL AVOIDANCE SENSOR (Phase-1, PRIMARY):")
+        la = self.local_avoidance
+        la_status = "ENABLED" if la.enabled else "DISABLED"
+        print(f"    Status         : {la_status}")
+        if la.enabled:
+            print(f"    Sensor dist    : {la.sensor_distance} m")
+            print(f"    Ray samples    : {la.ray_samples} per ray")
+            print(f"    Blend weights  : A*={la.astar_weight}  avoid={la.avoidance_weight}")
+            print(f"    Repulsion fall : power^{la.repulsion_falloff}")
+            print(f"    LPF alpha      : {la.smoothing_alpha}")
+            print(f"    Yellow thresh  : hit_frac < {la.yellow_threshold}")
+            print(f"    Red threshold  : hit_frac < {la.red_threshold}")
+            print(f"    Debug rays     : {'YES (green/yellow/red spheres)' if la.debug_rays else 'NO'}")
+        print("  -" * 32)
         print("  DEBUG FEATURES ACTIVE:")
         print("    [T1] Smooth chase-cam    (key 2 to activate)")
         print("    [T2] Blue path trail     (every 10 steps)")
         print("    [T3] Improved WP markers (larger, emissive)")
         print("    [T4] Full debug HUD      (every 100 steps, speed/accel/yaw)")
         print("    [T5] ASCII minimap       (every 200 steps)")
+        print("    [T6] Safety rings        (translucent red, safety_inflation radius)")
+        print("    [T7] Local avoidance rays (8 colored spheres: green/yellow/red)")
         print("=" * 64 + "\n")
+
 
     # ── Navigation logic ─────────────────────────────────────────────────
 
@@ -685,6 +1555,29 @@ class SingleDroneNavigation:
             print(f"  WP[{i:02d}] ({wp[0]:7.2f}, {wp[1]:7.2f}, {wp[2]:.1f}){marker}")
         print()
 
+        # ── Collision Safety Layer: post-planning segment validation ───────────
+        # A* can occasionally produce smoothed segments that clip a building
+        # corner at the grid-cell boundary.  Re-validate every consecutive WP
+        # pair in world-space at the (larger) safety_inflation_radius.
+        if self.safety_layer.enabled and len(self.waypoints) > 1:
+            print("[CollisionSafety] Running post-plan segment validation...")
+            fixed   = 0
+            prev_wp = [self.start_pos[0], self.start_pos[1], self.altitude]
+            for i in range(len(self.waypoints)):
+                wp = self.waypoints[i]
+                if not self.safety_layer.check_segment(prev_wp, wp):
+                    fallback = self.safety_layer.nearest_safe_waypoint(prev_wp, wp)
+                    print(f"  [CollisionSafety] Segment to WP[{i:02d}] BLOCKED — "
+                          f"replaced with nearest-safe fallback "
+                          f"({fallback[0]:.1f}, {fallback[1]:.1f})")
+                    self.waypoints[i] = fallback
+                    fixed += 1
+                prev_wp = self.waypoints[i]
+            if fixed == 0:
+                print("  [CollisionSafety] All segments clear — no corrections needed.")
+            else:
+                print(f"  [CollisionSafety] Fixed {fixed} blocked segment(s).")
+
         # Spawn visual markers if requested
         if self.show_wp_markers:
             self._spawn_waypoint_markers()
@@ -692,6 +1585,13 @@ class SingleDroneNavigation:
         # Spawn debug beacon above drone (Task 1)
         if self.debug_mode:
             self._spawn_debug_beacon()
+
+        # Spawn safety-inflation visualisation rings (CollisionSafety T6)
+        self.safety_layer.spawn_inflation_visuals(self.supervisor)
+
+        # Spawn local avoidance ray-tip spheres (LocalAvoidanceSensor debug)
+        if self.local_avoidance.enabled:
+            self.local_avoidance.spawn_ray_visuals(self.supervisor)
 
         self.astar_initialized = True
 
@@ -918,34 +1818,101 @@ class SingleDroneNavigation:
         # ── 2. Raw desired heading toward target ─────────────────────────
         raw_desired_yaw = math.atan2(dy, dx)
 
-        # ── 3. Obstacle repulsion — gated by emergency_radius (Task 3) ───
-        closest_name, min_dist, bx, by = self._check_collision_distance(cur)
-        self.last_avoiding = False
+        # ── 3. Avoidance: two-tier system ────────────────────────────────────
+        #
+        #   Tier 1 (PRIMARY): LocalAvoidanceSensor — 8 drone-centered rays.
+        #     Active whenever rays detect obstacles.  Blends A* direction with
+        #     avoidance direction using configured weights.  Smooth LPF output.
+        #
+        #   Tier 2 (FAIL-SAFE): CollisionSafetyLayer — building-surface distance.
+        #     Active only when drone is dangerously close (WARNING/EMERGENCY).
+        #     Retained as last-resort protection if local sensing misses something.
+        #
+        # Both layers can fire simultaneously; their contributions are additive.
+        # A* waypoint target vector is NEVER removed — only blended/steered.
 
-        if self.astar_enabled:
-            # A* is in control — only intervene in true emergencies
-            avoidance_active = closest_name and min_dist < self.emergency_radius
-            avoidance_mode   = "EMERGENCY" if avoidance_active else "DISABLED"
-        else:
-            # No A*: full reactive avoidance at safety_radius
-            avoidance_active = closest_name and min_dist < self.safety_radius
-            avoidance_mode   = "FULL" if avoidance_active else "DISABLED"
+        self.last_avoiding   = False
+        avoidance_mode       = "DISABLED"
 
-        if avoidance_active:
-            self.last_avoiding = True
-            rx = cur[0] - bx
-            ry = cur[1] - by
-            r_dist = math.hypot(rx, ry)
-            if r_dist > 1e-4:
-                blend_x = (dx / horiz_dist) * self.target_strength + \
-                          (rx / r_dist) * self.avoidance_strength
-                blend_y = (dy / horiz_dist) * self.target_strength + \
-                          (ry / r_dist) * self.avoidance_strength
+        # ── Tier 1: Local Avoidance Sensor (primary) ─────────────────────────
+        la = self.local_avoidance
+        if la.enabled:
+            # update() already called in step() before _move_toward_target()
+            la_vec = la.get_avoidance_vector()   # (ax, ay) LPF'd, normalised
+            la_mag = math.hypot(la_vec[0], la_vec[1])
+
+            if la_mag > 1e-4:
+                # A* unit direction toward current waypoint / target
+                astar_ux = dx / horiz_dist
+                astar_uy = dy / horiz_dist
+                # Blend: astar_weight × A* + avoidance_weight × avoidance
+                blend_x = astar_ux * la.astar_weight + la_vec[0] * la.avoidance_weight
+                blend_y = astar_uy * la.astar_weight + la_vec[1] * la.avoidance_weight
                 bl = math.hypot(blend_x, blend_y)
                 if bl > 1e-4:
                     raw_desired_yaw = math.atan2(blend_y / bl, blend_x / bl)
+                self.last_avoiding = True
+                avoidance_mode     = "LOCAL_SENSOR"
+            self._last_la_info = la.get_debug_info()
+        else:
+            self._last_la_info = {}
+
+        # ── Tier 2: CollisionSafetyLayer (emergency fail-safe only) ──────────
+        # This was the old primary avoidance.  Now it fires ONLY when the drone
+        # is already very close to a building (WARNING / EMERGENCY state), acting
+        # as a last-resort correction if the local sensor blending was insufficient.
+        sl          = self.safety_layer
+        coll_state  = sl._last_state           # cached from step()'s pre-move call
+        rep_vec     = sl.compute_repulsion(cur)# (rx, ry) filtered, normalised
+        rep_str     = sl.get_repulsion_strength()  # 0 / warn_str / emrg_str
+
+        if sl.enabled and rep_str > 0.0:
+            self.last_avoiding = True
+            rx, ry = rep_vec
+            # Additive emergency correction on top of whatever heading we have now
+            # (re-use the current raw_desired_yaw direction as the "target" component)
+            cur_dx = math.cos(raw_desired_yaw)
+            cur_dy = math.sin(raw_desired_yaw)
+            blend_x = cur_dx * self.target_strength + rx * rep_str
+            blend_y = cur_dy * self.target_strength + ry * rep_str
+            bl = math.hypot(blend_x, blend_y)
+            if bl > 1e-4:
+                raw_desired_yaw = math.atan2(blend_y / bl, blend_x / bl)
+            # Tag the state to show both sensors fired
+            if avoidance_mode == "LOCAL_SENSOR":
+                avoidance_mode = f"LOCAL+{coll_state}"
+            else:
+                avoidance_mode = coll_state   # "WARNING" or "EMERGENCY"
+        elif not sl.enabled:
+            # Legacy fallback (CollisionSafetyLayer disabled entirely)
+            closest_name_legacy, min_dist_legacy, bx_l, by_l = \
+                self._check_collision_distance(cur)
+            if self.astar_enabled:
+                avoidance_active_l = (closest_name_legacy and
+                                      min_dist_legacy < self.emergency_radius)
+                if avoidance_active_l and avoidance_mode == "DISABLED":
+                    avoidance_mode = "LEGACY_EMRG"
+            else:
+                avoidance_active_l = (closest_name_legacy and
+                                      min_dist_legacy < self.safety_radius)
+                if avoidance_active_l and avoidance_mode == "DISABLED":
+                    avoidance_mode = "LEGACY_FULL"
+            if avoidance_active_l:
+                self.last_avoiding = True
+                rx = cur[0] - bx_l
+                ry = cur[1] - by_l
+                r_dist = math.hypot(rx, ry)
+                if r_dist > 1e-4:
+                    blend_x = (dx / horiz_dist) * self.target_strength + \
+                              (rx / r_dist) * self.avoidance_strength
+                    blend_y = (dy / horiz_dist) * self.target_strength + \
+                              (ry / r_dist) * self.avoidance_strength
+                    bl = math.hypot(blend_x, blend_y)
+                    if bl > 1e-4:
+                        raw_desired_yaw = math.atan2(blend_y / bl, blend_x / bl)
 
         self.last_avoidance_mode = avoidance_mode
+
 
         # ── 4. Low-pass filter on desired_yaw (Task 4) ───────────────────
         # Initialise filter state on first step from current heading
@@ -1159,6 +2126,26 @@ class SingleDroneNavigation:
                 if dist_to_wp <= self.waypoint_radius and self._wp_lock_counter == 0:
                     prev_idx = self.current_wp_idx
                     if self.current_wp_idx < len(self.waypoints) - 1:
+                        candidate_idx = self.current_wp_idx + 1
+                        candidate_wp  = self.waypoints[candidate_idx]
+
+                        # ── Safety layer segment check before advancing ──────
+                        # Verify the segment cur → candidate_wp is clear at the
+                        # safety_inflation_radius BEFORE committing to the advance.
+                        seg_clear = self.safety_layer.check_segment(cur, candidate_wp)
+                        if not seg_clear:
+                            fallback = self.safety_layer.nearest_safe_waypoint(
+                                cur, candidate_wp
+                            )
+                            print(f"  [CollisionSafety] WP advance to WP[{candidate_idx:02d}] "
+                                  f"BLOCKED — inserting nearest-safe fallback "
+                                  f"({fallback[0]:.1f}, {fallback[1]:.1f})  "
+                                  f"step={self.step_count}")
+                            # Insert fallback ahead of candidate so the drone
+                            # reaches safety before continuing the sweep.
+                            self.waypoints.insert(candidate_idx, fallback)
+                            candidate_wp = fallback
+
                         self.current_wp_idx += 1
                         new_wp = self.waypoints[self.current_wp_idx]
                         self._wp_lock_counter = self.waypoint_reach_lock_steps
@@ -1169,6 +2156,18 @@ class SingleDroneNavigation:
                         print(f"  [WP_LOCK] Active for {self._wp_lock_counter} steps")
 
             prev_pos = list(cur)
+
+            # ── Pre-movement sensor updates ───────────────────────────────
+            # Both sensors must update from the CURRENT position before
+            # _move_toward_target() reads their cached state.
+
+            # LocalAvoidanceSensor: cast 8 rays, compute blended avoidance vec
+            if self.local_avoidance.enabled:
+                self.local_avoidance.update(cur, self.current_yaw, self.vx, self.vy)
+
+            # CollisionSafetyLayer: update building-distance state machine
+            self.safety_layer.get_collision_state(cur)
+
             new_pos  = self._move_toward_target()
             self.uav_tf.setSFVec3f(new_pos)
             self._orient_toward(prev_pos, new_pos)
@@ -1187,6 +2186,9 @@ class SingleDroneNavigation:
                 self._update_debug_beacon(new_pos)
                 # Task 3: add trail dot
                 self._update_path_trail(new_pos)
+                # LocalAvoidanceSensor: move & recolor ray-tip spheres
+                if self.local_avoidance.enabled and self.local_avoidance.debug_rays:
+                    self.local_avoidance.update_ray_visuals(self.supervisor, new_pos)
 
             # Task 2: smooth chase cam override (only when cam_mode == 2)
             if self.parent.cam_mode == 2:
@@ -1201,13 +2203,26 @@ class SingleDroneNavigation:
                 self._print_minimap(new_pos)
             # ─────────────────────────────────────────────────────────────
 
-            # Lightweight Collision Check
+            # ── Safety layer: update state + collision telemetry ──────────
+            # get_collision_state() caches result internally for HUD.
+            safety_state = self.safety_layer.get_collision_state(new_pos)
+            self._last_safety_info = self.safety_layer.get_debug_info()
+
+            # Legacy lightweight collision check (kept for metrics logging)
             closest_name, min_dist, _, _ = self._check_collision_distance(cur)
             if min_dist < self.safety_radius:
                 self.collision_count += 1  # Accumulate proximity warning steps
 
-            if min_dist < 4.0 and (self.step_count - self.last_warning_step) > 20:
-                print(f"  [WARNING] Potential collision likely with {closest_name}! (dist: {min_dist:.1f}m)")
+            if safety_state == CollisionSafetyLayer.EMERGENCY and \
+               (self.step_count - self.last_warning_step) > 20:
+                print(f"  [COLLISION EMERGENCY] Drone dangerously close to "
+                      f"{self._last_safety_info['nearest_name']} "
+                      f"(surface dist: {self._last_safety_info['surface_dist']:.1f}m)")
+                self.last_warning_step = self.step_count
+            elif safety_state == CollisionSafetyLayer.WARNING and \
+                 (self.step_count - self.last_warning_step) > 50:
+                print(f"  [COLLISION WARNING] Near {self._last_safety_info['nearest_name']} "
+                      f"({self._last_safety_info['surface_dist']:.1f}m surface dist)")
                 self.last_warning_step = self.step_count
             elif min_dist < 0.0 and (self.step_count - self.last_warning_step) > 20:
                 print(f"  [CRITICAL] Drone is INSIDE building {closest_name}!")
@@ -1351,7 +2366,7 @@ class SingleDroneNavigation:
             dist_to_wp  = dist_to_target
             lock_str    = "N/A"
 
-        # Nearest obstacle
+        # Nearest obstacle (raw geometry — kept for legacy column)
         if closest_bldg and bldg_dist < 999.0:
             obstacle_str = f"{closest_bldg:<14} ({bldg_dist:.1f} m)"
         else:
@@ -1359,6 +2374,21 @@ class SingleDroneNavigation:
 
         total_crowd = len(self.parent.crowd_nodes)
         trr_str = f"{self.last_trr:5.1f}% ({self.last_tracked_count}/{total_crowd})"
+
+        # Collision safety layer debug info
+        si           = self._last_safety_info
+        coll_state   = si.get("state",            "N/A")
+        safe_nearest = si.get("nearest_name",     "N/A") or "N/A"
+        safe_dist    = si.get("surface_dist",     float("inf"))
+        danger_r     = si.get("danger_radius",    0.0)
+        emerg_r      = si.get("emergency_radius", 0.0)
+        avd_vec      = si.get("repulsion_vec",    (0.0, 0.0))
+        avd_mag      = si.get("repulsion_mag",    0.0)
+
+        safe_dist_str = f"{safe_dist:.1f} m" if safe_dist < 9999 else "clear"
+        avd_str       = f"({avd_vec[0]:+.3f}, {avd_vec[1]:+.3f}) |{avd_mag:.3f}|"
+        # State string with inline label
+        state_label   = f"{coll_state:<9}"  # SAFE / WARNING  / EMERGENCY
 
         line = "\u2550" * 50
         print(f"\n\u2554{line}\u2557")
@@ -1389,7 +2419,61 @@ class SingleDroneNavigation:
         print(f"\u2551  Dist to WP       : {dist_to_wp:7.2f} m                         \u2551")
         print(f"\u2551  Nearest Obs.     : {obstacle_str:<28} \u2551")
         print(f"\u2551  TRR (Crowd)      : {trr_str:<28} \u2551")
+        print(f"\u2560{line}\u2563")
+        print(f"\u2551  \u25ba COLLISION SAFETY LAYER (emergency fail-safe) \u25c4          \u2551")
+        print(f"\u2551  Coll. State      : {state_label:<28} \u2551")
+        print(f"\u2551  Nearest (safety) : {safe_nearest:<14} {safe_dist_str:<13} \u2551")
+        print(f"\u2551  Danger  radius   : {danger_r:5.1f} m  (WARNING threshold)        \u2551")
+        print(f"\u2551  Emerg.  radius   : {emerg_r:5.1f} m  (EMERGENCY threshold)      \u2551")
+        print(f"\u2551  Avoidance vector : {avd_str:<28} \u2551")
+        print(f"\u2560{line}\u2563")
+
+        # ── Local Avoidance Sensor HUD section ───────────────────────────
+        la_info     = getattr(self, '_last_la_info', {})
+        la_enabled  = self.local_avoidance.enabled
+        la_active   = la_info.get("active",         False)
+        la_near_ray = la_info.get("nearest_ray",    "none")
+        la_near_d   = la_info.get("nearest_dist_m", float("inf"))
+        la_avec     = la_info.get("avoidance_vec",  (0.0, 0.0))
+        la_amag     = la_info.get("avoidance_mag",  0.0)
+        la_rays     = la_info.get("ray_results",    [])
+
+        la_near_d_str  = f"{la_near_d:.2f} m" if la_near_d < 9999 else "clear"
+        la_avec_str    = f"({la_avec[0]:+.3f}, {la_avec[1]:+.3f}) |{la_amag:.3f}|"
+        la_active_str  = "ACTIVE" if la_active else "IDLE"
+        la_en_str      = "ENABLED" if la_enabled else "DISABLED"
+
+        # Build compact ray status line: F=front, FR=front-right, etc.
+        ray_abbr = {"front": "FW", "front-left": "FL", "left": "LT",
+                    "rear-left": "RL", "rear": "RR", "rear-right": "RR",
+                    "right": "RT", "front-right": "FR"}
+        ray_parts = []
+        for rr in la_rays:
+            abbr = ray_abbr.get(rr["label"], rr["label"][:2].upper())
+            frac = rr["hit_fraction"]
+            if not rr["hit"]:
+                tag = f"{abbr}:\u2713"   # checkmark = clear
+            elif frac < self.local_avoidance.red_threshold:
+                tag = f"{abbr}:!!!"      # red — very close
+            elif frac < self.local_avoidance.yellow_threshold:
+                tag = f"{abbr}:!"        # yellow — nearby
+            else:
+                tag = f"{abbr}:\u2713"   # green (hit but far)
+            ray_parts.append(tag)
+        ray_status_str = " ".join(ray_parts)
+
+        print(f"\u2551  \u25ba LOCAL AVOIDANCE SENSOR (Phase-1, primary) \u25c4          \u2551")
+        print(f"\u2551  Sensor           : {la_en_str:<28} \u2551")
+        print(f"\u2551  Sensor range     : {self.local_avoidance.sensor_distance:5.1f} m  ({self.local_avoidance.NUM_RAYS} rays)            \u2551")
+        print(f"\u2551  Active           : {la_active_str:<28} \u2551")
+        print(f"\u2551  Nearest hit ray  : {la_near_ray:<28} \u2551")
+        print(f"\u2551  Nearest hit dist : {la_near_d_str:<28} \u2551")
+        print(f"\u2551  Avoidance vector : {la_avec_str:<28} \u2551")
+        # Ray status — may be long; trim to fit box
+        ray_disp = ray_status_str[:46] if len(ray_status_str) > 46 else ray_status_str
+        print(f"\u2551  Ray states       : {ray_disp:<28} \u2551")
         print(f"\u255a{line}\u255d")
+
 
 
 
