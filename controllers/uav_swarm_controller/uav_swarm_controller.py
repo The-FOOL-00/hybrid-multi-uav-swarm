@@ -500,11 +500,8 @@ class CollisionSafetyLayer:
         name, surf_dist, bx, by = self._nearest_building(drone_pos)
         self._last_nearest = (name, surf_dist, bx, by)
 
-        # Improvement 6: use a slightly tighter emergency band (emergency_radius * 0.75)
-        # so EMERGENCY only fires when VERY close; WARNING covers a wider range.
-        # danger_radius is unchanged — WARNING still starts at the same outer edge.
-        effective_emergency = self.emergency_radius * 0.75
-        if surf_dist <= effective_emergency:
+        # Restored: original emergency threshold (no reduction)
+        if surf_dist <= self.emergency_radius:
             self._last_state = self.EMERGENCY
         elif surf_dist <= self.danger_radius:
             self._last_state = self.WARNING
@@ -740,17 +737,16 @@ class LocalAvoidanceSensor:
         # Improvement 2: default sensor distance raised from 10 → 14 m
         self.sensor_distance  = float(cfg.get("sensor_distance", 14.0))
         self.ray_samples      = int(cfg.get("ray_samples", 20))
-        # Improvement 5: default blend shifted from 0.75/0.25 → 0.65/0.35
-        self.astar_weight     = float(cfg.get("astar_weight", 0.65))
-        self.avoidance_weight = float(cfg.get("avoidance_weight", 0.35))
+        # Restored planner dominance
+        self.astar_weight     = float(cfg.get("astar_weight", 0.75))
+        self.avoidance_weight = float(cfg.get("avoidance_weight", 0.25))
         self.repulsion_falloff= float(cfg.get("repulsion_falloff", 2.0))
         self.smoothing_alpha  = float(cfg.get("smoothing_alpha", 0.35))
         self.debug_rays       = bool(cfg.get("debug_rays", True))
         self.yellow_threshold = float(cfg.get("yellow_threshold", 0.60))
         self.red_threshold    = float(cfg.get("red_threshold", 0.30))
-        # Improvement 4: predictive avoidance — number of velocity steps to project ahead
-        # 0 = disabled (pure current-position raycasting only)
-        self.prediction_steps = int(cfg.get("prediction_steps", 12))
+        # Disabled predictive avoidance
+        self.prediction_steps = 0
 
         self.buildings        = buildings   # raw geometric buildings
 
@@ -858,15 +854,6 @@ class LocalAvoidanceSensor:
 
         ox, oy = drone_pos[0], drone_pos[1]
 
-        # ── Improvement 4: compute predicted origin (future position) ─────────
-        if self.prediction_steps > 0 and (abs(drone_vx) > 1e-5 or abs(drone_vy) > 1e-5):
-            px = ox + drone_vx * self.prediction_steps
-            py = oy + drone_vy * self.prediction_steps
-            use_prediction = True
-        else:
-            px, py = ox, oy
-            use_prediction = False
-
         # ── Cast rays from CURRENT position ──────────────────────────────────
         raw_ax, raw_ay = 0.0, 0.0
         nearest_frac   = 1.0
@@ -902,31 +889,6 @@ class LocalAvoidanceSensor:
         self._last_nearest_ray  = nearest_label
         self._last_nearest_dist = nearest_frac * self.sensor_distance
 
-        # ── Improvement 4: cast rays from PREDICTED position and blend ────────
-        if use_prediction:
-            pred_ax, pred_ay = 0.0, 0.0
-            for i, (lbl, base_angle) in enumerate(self.RAY_DEFS):
-                world_angle  = drone_yaw + base_angle
-                pred_result  = self._cast_ray(px, py, world_angle)
-                if pred_result["hit"]:
-                    frac = pred_result["hit_fraction"]
-                    dir_weight = self.RAY_WEIGHTS.get(lbl, 1.0)
-                    repulsion_weight = (1.0 - frac) ** self.repulsion_falloff * dir_weight
-                    pred_ax -= math.cos(world_angle) * repulsion_weight
-                    pred_ay -= math.sin(world_angle) * repulsion_weight
-                    # Widen nearest hit tracking if predicted hit is closer
-                    if frac < nearest_frac:
-                        nearest_frac  = frac
-                        nearest_label = lbl
-
-            # Blend 60 % current + 40 % predicted — give predicted result
-            # meaningful influence without dominating the immediate steering
-            raw_ax = raw_ax * 0.60 + pred_ax * 0.40
-            raw_ay = raw_ay * 0.60 + pred_ay * 0.40
-
-            # Update nearest with predictive result
-            self._last_nearest_ray  = nearest_label
-            self._last_nearest_dist = nearest_frac * self.sensor_distance
 
         # Normalise raw avoidance vector before filtering
         raw_mag = math.hypot(raw_ax, raw_ay)
@@ -1206,6 +1168,15 @@ class SingleDroneNavigation:
         self.last_heading_error_deg = 0.0    # degrees between current_yaw and target
         self.last_avoidance_mode    = "DISABLED"  # DISABLED / EMERGENCY / FULL
         self.last_motion_state      = "CRUISE"    # CRUISE / DECEL / DAMP / LOCKED
+
+        # Anti-spin protection
+        self._last_turn_sign = 0
+        self._oscillation_count = 0.0
+        self._anti_spin_active_steps = 0
+
+        # Stuck detection
+        self._pos_history = []
+        self._stuck_recovery_steps = 0
 
         # UAV_0 node references (index 0 in parent lists)
         if len(parent.uav_trans) == 0:
@@ -1834,6 +1805,16 @@ class SingleDroneNavigation:
         self.last_avoiding   = False
         avoidance_mode       = "DISABLED"
 
+        # ── Stuck detection ──────────────────────────────────────────────────
+        self._pos_history.append(list(cur))
+        if len(self._pos_history) > 80:
+            old_pos = self._pos_history.pop(0)
+            if self._dist3(cur, old_pos) < 1.0 and self._stuck_recovery_steps == 0:
+                print("[STUCK DETECTED] Drone displacement < 1m over 80 steps. Prioritizing A* direction.")
+                self._stuck_recovery_steps = 40
+        if self._stuck_recovery_steps > 0:
+            self._stuck_recovery_steps -= 1
+
         # ── Tier 1: Local Avoidance Sensor (primary) ─────────────────────────
         la = self.local_avoidance
         if la.enabled:
@@ -1841,13 +1822,27 @@ class SingleDroneNavigation:
             la_vec = la.get_avoidance_vector()   # (ax, ay) LPF'd, normalised
             la_mag = math.hypot(la_vec[0], la_vec[1])
 
-            if la_mag > 1e-4:
+            # Apply Anti-Spin and Stuck Detection modifications
+            eff_avoidance_weight = la.avoidance_weight
+            if self._anti_spin_active_steps > 0:
+                eff_avoidance_weight *= 0.5
+            if self._stuck_recovery_steps > 0:
+                eff_avoidance_weight = 0.0 # Prioritize A* direction completely
+
+            if la_mag > 1e-4 and eff_avoidance_weight > 0.0:
                 # A* unit direction toward current waypoint / target
                 astar_ux = dx / horiz_dist
                 astar_uy = dy / horiz_dist
-                # Blend: astar_weight × A* + avoidance_weight × avoidance
-                blend_x = astar_ux * la.astar_weight + la_vec[0] * la.avoidance_weight
-                blend_y = astar_uy * la.astar_weight + la_vec[1] * la.avoidance_weight
+                
+                # Clamp avoidance steering magnitude so it only slightly biases heading
+                # Note: with astar_weight=0.75, avoid_weight=0.25 it's already capped,
+                # but we explicitly clamp the local avoidance contribution here.
+                clamped_la_x = la_vec[0] * eff_avoidance_weight
+                clamped_la_y = la_vec[1] * eff_avoidance_weight
+                
+                # Blend: astar_weight × A* + avoidance
+                blend_x = astar_ux * la.astar_weight + clamped_la_x
+                blend_y = astar_uy * la.astar_weight + clamped_la_y
                 bl = math.hypot(blend_x, blend_y)
                 if bl > 1e-4:
                     raw_desired_yaw = math.atan2(blend_y / bl, blend_x / bl)
@@ -1935,6 +1930,25 @@ class SingleDroneNavigation:
         while delta_yaw >  math.pi: delta_yaw -= 2.0 * math.pi
         while delta_yaw < -math.pi: delta_yaw += 2.0 * math.pi
         turn = max(-self.max_turn_rate, min(self.max_turn_rate, delta_yaw))
+        
+        # Anti-spin protection logic
+        turn_sign = 1 if turn > 1e-3 else (-1 if turn < -1e-3 else 0)
+        if turn_sign != 0:
+            if turn_sign != self._last_turn_sign:
+                self._oscillation_count += 1
+                self._last_turn_sign = turn_sign
+            else:
+                # decay count if turning consistently in one direction
+                self._oscillation_count = max(0.0, self._oscillation_count - 0.1)
+
+        if self._oscillation_count > 20:
+            print("[ANTI-SPIN] Drone oscillation detected. Reducing avoidance authority.")
+            self._anti_spin_active_steps = 40
+            self._oscillation_count = 0.0
+
+        if self._anti_spin_active_steps > 0:
+            self._anti_spin_active_steps -= 1
+
         self.current_yaw += turn
         self.last_turn_rate = turn
         while self.current_yaw >  math.pi: self.current_yaw -= 2.0 * math.pi
