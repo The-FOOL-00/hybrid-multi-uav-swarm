@@ -104,15 +104,17 @@ while robot.step(timestep) != -1:
 
     # ── Camera gimbal stabilization ───────────────────────────────────────────
     # Stabilize gimbal based on gyro feedback (keeps horizon level)
-    if gyro and camera_roll_motor and camera_pitch_motor:
+    # Pitch is set to -0.5 radians (maximum downward tilt) so the onboard camera overlay
+    # shows the ground and pedestrians instead of the horizon.
+    if camera_pitch_motor:
+        camera_pitch_motor.setPosition(-0.5)
+    if gyro and camera_roll_motor:
         gyro_vals = gyro.getValues()
         if gyro_vals:
-            # Clamp roll and pitch target positions to joint limits [-0.49, 0.49] rad
+            # Clamp roll target position to joint limits [-0.49, 0.49] rad
             # to prevent out-of-bounds warnings and stabilize camera view
             roll_target = max(-0.49, min(0.49, -0.115 * gyro_vals[0]))
-            pitch_target = max(-0.49, min(0.49, -0.1 * gyro_vals[1]))
             camera_roll_motor.setPosition(roll_target)
-            camera_pitch_motor.setPosition(pitch_target)
 
     # ── Periodic sensor log (for research metrics) ────────────────────────────
     # NOTE: Position truth comes from supervisor (getPosition()).

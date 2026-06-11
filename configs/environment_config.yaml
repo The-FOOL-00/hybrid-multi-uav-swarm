@@ -153,7 +153,7 @@ baseline_navigation:
   arrival_radius: 3.0          # metres — declare ARRIVED when dist < this
   altitude: 15.0               # m  — constant cruise altitude
   log_interval_steps: 100      # console log every N steps
-  safety_radius: 5.0           # distance from obstacle surface to begin avoidance
+  safety_radius: 3.0           # distance from obstacle surface to begin avoidance
   avoidance_strength: 1.5      # multiplier for obstacle repulsion vector
   target_strength: 1.0         # multiplier for target attraction vector
 
@@ -174,7 +174,7 @@ baseline_navigation:
 
   # ── Stabilisation Layer ───────────────────────────────────────────
   # Fix shaking/jitter without touching architecture or A*.
-  emergency_radius:          4.0   # m — reactive avoidance ONLY inside this radius
+  emergency_radius:          1.5   # m — reactive avoidance ONLY inside this radius
                                        #     A* alone controls outside this zone
   yaw_smoothing_alpha:       0.2   # low-pass weight on desired_yaw each step
                                        #     0.0=frozen, 1.0=instant (no filtering)
@@ -191,7 +191,7 @@ baseline_navigation:
 
     # Dual inflation radii (metres added to each building's geometric radius)
     planner_inflation_radius: 2.0   # used by A* grid rasterisation (same as obstacle_inflation)
-    safety_inflation_radius:  5.0   # larger world-space margin used by CollisionSafetyLayer
+    safety_inflation_radius:  2.0   # larger world-space margin used by CollisionSafetyLayer
 
     # Segment collision validation
     # Before the drone commits to current_pos → next_waypoint, the segment
@@ -204,8 +204,8 @@ baseline_navigation:
     # SAFE     : dist_to_surface > danger_radius   — A* steers, no repulsion
     # WARNING  : danger_radius >= dist > emergency_radius  — half repulsion
     # EMERGENCY: dist <= emergency_radius  — full repulsion override
-    danger_radius:            8.0   # m from building surface → WARNING state
-    repulsion_emergency_radius: 4.0 # m from building surface → EMERGENCY state
+    danger_radius:            3.0   # m from building surface → WARNING state
+    repulsion_emergency_radius: 1.5 # m from building surface → EMERGENCY state
     repulsion_strength:       2.5   # multiplier for repulsion blend in EMERGENCY
     repulsion_strength_warn:  0.8   # multiplier for repulsion blend in WARNING
     repulsion_smoothing:      0.30  # low-pass alpha on repulsion vector (0=frozen, 1=instant)

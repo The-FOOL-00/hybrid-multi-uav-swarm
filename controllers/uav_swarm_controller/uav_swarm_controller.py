@@ -1193,11 +1193,14 @@ class SingleDroneNavigation:
         self.test_buildings = []
         self._init_buildings()
         self.last_warning_step = -999
+        self.last_critical_warning_step = -999
 
         # ── Metrics collection state ──────────────────────────────────────────
         self.sim_start_time      = None     # supervisor time at first step (s)
         self.distance_travelled  = 0.0      # cumulative 3-D distance (m)
         self.collision_count     = 0        # count of proximity/collision steps
+        self.hard_collision_count = 0       # count of actual building interpenetration steps
+        self.physics_contact_count = 0      # count of steps with physical contact points
         self.altitude_readings   = []       # Z values each step for stability calc
         self.trr_readings        = []       # TRR values each step for average calculation
         self.step_log            = []       # sparse log for JSON export
@@ -1205,6 +1208,13 @@ class SingleDroneNavigation:
         self._prev_pos           = None
         self.last_trr            = 0.0
         self.last_tracked_count  = 0
+
+        # Phase 1 additions
+        self.visited_grid_cells = set()
+        self.grid_cell_size = 10.0  # 10m x 10m cells
+        self.total_grid_cells = 400  # (200 / 10) ** 2
+        self.unique_pedestrians_spotted = set()
+        self.is_headless = os.environ.get('WEBOTS_HEADLESS', 'false').lower() == 'true'
 
         # ── A* planner setup ──────────────────────────────────────────────
         self.astar_enabled   = bool(cfg.get("astar_enabled", True))
@@ -1291,32 +1301,41 @@ class SingleDroneNavigation:
             try:
                 name = node.getDef() or node.getTypeName()
                 pos = node.getPosition()
+                type_name = node.getTypeName()
                 
                 # Default approximate radius based on building type
                 r = 10.0
-                type_name = node.getTypeName()
-                
-                if type_name == "SimpleBuilding":
-                    corners_field = node.getField("corners")
-                    if corners_field and corners_field.getTypeName() == "MFVec2f":
-                        num_points = corners_field.getCount()
-                        max_dist = 0.0
-                        for idx in range(num_points):
-                            pt = corners_field.getMFVec2f(idx)
-                            max_dist = max(max_dist, math.hypot(pt[0], pt[1]))
-                        if max_dist > 0.0:
-                            r = max_dist
-                elif type_name == "CommercialBuilding":
-                    r = 14.0
-                elif type_name == "ResidentialBuilding":
-                    r = 10.0
-                elif type_name == "LargeResidentialTower":
-                    r = 14.0
-                elif type_name == "Hotel":
+                if type_name == "CommercialBuilding":
                     r = 16.0
+                elif type_name == "ResidentialBuilding":
+                    r = 30.0
+                elif type_name == "LargeResidentialTower":
+                    r = 12.5
+                elif type_name == "Hotel":
+                    r = 10.0
                 elif type_name == "RandomBuilding":
                     r = 14.0
-                
+
+                # Query corners field if available (e.g. SimpleBuilding, RandomBuilding)
+                corners_field = node.getField("corners")
+                corners_val = "None"
+                if corners_field and corners_field.getTypeName() == "MFVec2f":
+                    num_points = corners_field.getCount()
+                    max_dist = 0.0
+                    corners_list = []
+                    for idx in range(num_points):
+                        pt = corners_field.getMFVec2f(idx)
+                        corners_list.append(list(pt))
+                        max_dist = max(max_dist, math.hypot(pt[0], pt[1]))
+                    if max_dist > 0.0:
+                        r = max_dist
+                    corners_val = str(corners_list)
+
+                # Print building details for debugging and verification
+                bo = node.getField("boundingObject")
+                bo_type = bo.getSFNode().getTypeName() if (bo and bo.getSFNode()) else "None"
+                print(f"[DEBUG_BUILDING] Name={name} Type={type_name} Pos={pos} BO={bo_type} Corners={corners_val} CalculatedRadius={r:.2f}")
+
                 self.test_buildings.append({
                     "name": name,
                     "x": pos[0],
@@ -1462,16 +1481,20 @@ class SingleDroneNavigation:
         
         # Define lawnmower sweep key waypoints covering the full 200m x 200m world along street centerlines
         sweep_targets = [
-            [-90.0, -80.0],
-            [90.0, -80.0],
+            [-90.0, -60.0],
+            [90.0, -60.0],
             [90.0, -40.0],
             [-90.0, -40.0],
-            [-90.0, 0.0],
+            [-90.0, -20.0],
+            [90.0, -20.0],
             [90.0, 0.0],
+            [-90.0, 0.0],
+            [-90.0, 20.0],
+            [90.0, 20.0],
             [90.0, 40.0],
             [-90.0, 40.0],
-            [-90.0, 80.0],
-            [90.0, 80.0],
+            [-90.0, 60.0],
+            [90.0, 60.0],
             [self.target_pos[0], self.target_pos[1]]
         ]
 
@@ -1550,18 +1573,18 @@ class SingleDroneNavigation:
                 print(f"  [CollisionSafety] Fixed {fixed} blocked segment(s).")
 
         # Spawn visual markers if requested
-        if self.show_wp_markers:
+        if self.show_wp_markers and self.debug_mode and not self.is_headless:
             self._spawn_waypoint_markers()
 
         # Spawn debug beacon above drone (Task 1)
-        if self.debug_mode:
+        if self.debug_mode and not self.is_headless:
             self._spawn_debug_beacon()
 
         # Spawn safety-inflation visualisation rings (CollisionSafety T6)
-        self.safety_layer.spawn_inflation_visuals(self.supervisor)
+        pass
 
         # Spawn local avoidance ray-tip spheres (LocalAvoidanceSensor debug)
-        if self.local_avoidance.enabled:
+        if self.local_avoidance.enabled and self.debug_mode and not self.is_headless:
             self.local_avoidance.spawn_ray_visuals(self.supervisor)
 
         self.astar_initialized = True
@@ -2042,8 +2065,6 @@ class SingleDroneNavigation:
 
     # ── Per-step update ───────────────────────────────────────────────────
 
-    # ── Per-step update ───────────────────────────────────────────────────
-
     def step(self):
         """
         Called once per simulation step.
@@ -2056,6 +2077,12 @@ class SingleDroneNavigation:
         self._suppress_inactive_uavs()
 
         cur = list(self.uav_tf.getSFVec3f())
+
+        # Snap drone's current XY position to the nearest grid cell and add to set
+        cell_x = int(cur[0] // self.grid_cell_size)
+        cell_y = int(cur[1] // self.grid_cell_size)
+        self.visited_grid_cells.add((cell_x, cell_y))
+        cumulative_coverage = len(self.visited_grid_cells) / self.total_grid_cells * 100.0
 
         # Initialize metrics on step 1
         if self.step_count == 1:
@@ -2100,19 +2127,15 @@ class SingleDroneNavigation:
                 self.uav_node.resetPhysics()   # zero accumulated thrust
             except Exception:
                 pass
-            print(f"[SingleDroneNav] STATE: TAKEOFF")
-            print(f"  UAV_0 placed at start: {self.start_pos}")
-            print(f"  Target               : {self.target_pos}")
-            total_dist = self._dist3(self.start_pos, self.target_pos)
-            print(f"  Total mission dist   : {total_dist:.1f} m")
-            print(f"  Estimated steps      : ~{int(total_dist / self.cruise_speed)} steps\n")
+
+            # Transition to NAVIGATE
             self.state = self.STATE_NAVIGATE
+            print(f"  [Takeoff] UAV_0 ready at start position — transitioning to NAVIGATE. step={self.step_count}")
             return True
 
-        # ── STATE: NAVIGATE ───────────────────────────────────────────
+        # ── STATE: NAVIGATE ────────────────────────────────────────────
         if self.state == self.STATE_NAVIGATE:
-
-            # Lazy A* init — runs once on the very first NAVIGATE step
+            # First-step A* planner initialization
             if self.astar_enabled and not self.astar_initialized:
                 self._init_astar()
 
@@ -2137,7 +2160,19 @@ class SingleDroneNavigation:
                               f"now active  step={self.step_count}")
 
                 # Only advance when lock is not active
-                if dist_to_wp <= self.waypoint_radius and self._wp_lock_counter == 0:
+                is_final_wp = (self.current_wp_idx == len(self.waypoints) - 1)
+                effective_radius = 8.0 if is_final_wp else self.waypoint_radius
+
+                # Check if stuck near the final waypoint due to obstacle repulsion
+                is_stuck_near_final = False
+                if is_final_wp and len(self._pos_history) >= 80:
+                    old_pos = self._pos_history[0]
+                    if self._dist3(cur, old_pos) < 1.0:
+                        is_stuck_near_final = True
+                        print(f"  [A*] Stuck detection triggered near final waypoint WP[{self.current_wp_idx:02d}] "
+                              f"(displacement {self._dist3(cur, old_pos):.2f}m < 1.0m over 80 steps).")
+
+                if (dist_to_wp <= effective_radius or is_stuck_near_final) and self._wp_lock_counter == 0:
                     prev_idx = self.current_wp_idx
                     if self.current_wp_idx < len(self.waypoints) - 1:
                         candidate_idx = self.current_wp_idx + 1
@@ -2168,6 +2203,12 @@ class SingleDroneNavigation:
                               f"({new_wp[0]:.1f}, {new_wp[1]:.1f})  "
                               f"step={self.step_count}")
                         print(f"  [WP_LOCK] Active for {self._wp_lock_counter} steps")
+                    else:
+                        print(f"  [A*] Reached last waypoint WP[{self.current_wp_idx:02d}] — declaring mission complete.")
+                        # Snap to last safe waypoint, hold, and declare arrival
+                        self.uav_tf.setSFVec3f(wp)
+                        self.state = self.STATE_ARRIVED
+                        return True
 
             prev_pos = list(cur)
 
@@ -2195,7 +2236,7 @@ class SingleDroneNavigation:
                 pass
 
             # ── DEBUG OBSERVABILITY UPDATES ───────────────────────────────
-            if self.debug_mode:
+            if self.debug_mode and not self.is_headless:
                 # Task 1: move beacon above drone
                 self._update_debug_beacon(new_pos)
                 # Task 3: add trail dot
@@ -2203,14 +2244,6 @@ class SingleDroneNavigation:
                 # LocalAvoidanceSensor: move & recolor ray-tip spheres
                 if self.local_avoidance.enabled and self.local_avoidance.debug_rays:
                     self.local_avoidance.update_ray_visuals(self.supervisor, new_pos)
-
-            # Task 2: smooth chase cam override (only when cam_mode == 2)
-            if self.parent.cam_mode == 2:
-                self.parent._update_chase_cam(
-                    new_pos, self.last_steer_vec, self._chase_lerp_alpha,
-                    self._chase_behind_dist, self._chase_above_dist,
-                    self._chase_lookahead
-                )
 
             # Task 6: ASCII minimap every N steps
             if self.debug_mode and self.step_count % self._minimap_interval == 0:
@@ -2222,24 +2255,37 @@ class SingleDroneNavigation:
             safety_state = self.safety_layer.get_collision_state(new_pos)
             self._last_safety_info = self.safety_layer.get_debug_info()
 
+            # Direct physical collision check using Webots contact points (independent of map!)
+            has_physics_contact = False
+            try:
+                contacts = self.parent.uavs[0].getContactPoints()
+                if len(contacts) > 0:
+                    has_physics_contact = True
+                    self.physics_contact_count += 1
+            except Exception:
+                pass
+
             # Legacy lightweight collision check (kept for metrics logging)
             closest_name, min_dist, _, _ = self._check_collision_distance(cur)
             if min_dist < self.safety_radius:
                 self.collision_count += 1  # Accumulate proximity warning steps
+            if min_dist < 0.0:
+                self.hard_collision_count += 1  # Accumulate actual building interpenetration steps
 
-            if safety_state == CollisionSafetyLayer.EMERGENCY and \
-               (self.step_count - self.last_warning_step) > 20:
+            # Unthrottled Critical Collision Warning (independent of regular warning throttling)
+            if min_dist < 0.0 and (self.step_count - self.last_critical_warning_step) > 20:
+                print(f"  [CRITICAL COLLISION] Drone has physically phased INSIDE building {closest_name}! "
+                      f"(penetration depth: {abs(min_dist):.2f}m, physics_contact={has_physics_contact})")
+                self.last_critical_warning_step = self.step_count
+
+            if safety_state == CollisionSafetyLayer.EMERGENCY and                (self.step_count - self.last_warning_step) > 20:
                 print(f"  [COLLISION EMERGENCY] Drone dangerously close to "
                       f"{self._last_safety_info['nearest_name']} "
                       f"(surface dist: {self._last_safety_info['surface_dist']:.1f}m)")
                 self.last_warning_step = self.step_count
-            elif safety_state == CollisionSafetyLayer.WARNING and \
-                 (self.step_count - self.last_warning_step) > 50:
+            elif safety_state == CollisionSafetyLayer.WARNING and                   (self.step_count - self.last_warning_step) > 50:
                 print(f"  [COLLISION WARNING] Near {self._last_safety_info['nearest_name']} "
                       f"({self._last_safety_info['surface_dist']:.1f}m surface dist)")
-                self.last_warning_step = self.step_count
-            elif min_dist < 0.0 and (self.step_count - self.last_warning_step) > 20:
-                print(f"  [CRITICAL] Drone is INSIDE building {closest_name}!")
                 self.last_warning_step = self.step_count
 
             # Sparse step logging for metrics JSON
@@ -2252,7 +2298,8 @@ class SingleDroneNavigation:
                     "state": self.state,
                     "trr_percent": round(self.last_trr, 2),
                     "tracked_count": self.last_tracked_count,
-                    "proximity_warning": int(min_dist < self.safety_radius)
+                    "proximity_warning": int(min_dist < self.safety_radius),
+                    "cumulative_coverage_percent": round(cumulative_coverage, 2)
                 })
 
             # Task 5: Periodic formatted debug HUD
@@ -2262,7 +2309,7 @@ class SingleDroneNavigation:
 
             return True
 
-        # ── STATE: ARRIVED ───────────────────────────────────────────
+                # ── STATE: ARRIVED ───────────────────────────────────────────
         if self.state == self.STATE_ARRIVED:
             if not self.arrived_reported:
                 self.reached_target = True
@@ -2305,6 +2352,15 @@ class SingleDroneNavigation:
         # Mean TRR
         mean_trr = sum(self.trr_readings) / len(self.trr_readings) if self.trr_readings else 0.0
         
+        crowd_positions = []
+        for node in self.parent.crowd_nodes:
+            try:
+                crowd_positions.append(node.getPosition())
+            except Exception:
+                pass
+
+        cumulative_coverage = len(self.visited_grid_cells) / self.total_grid_cells * 100.0
+
         metrics = {
             "phase": "Phase 1 — Single Drone Lawnmower Patrol & Surveillance Baseline",
             "world": "worlds/single_drone_downtown.wbt",
@@ -2314,8 +2370,13 @@ class SingleDroneNavigation:
             "travel_time_s": round(travel_time, 3),
             "distance_travelled_m": round(self.distance_travelled, 3),
             "proximity_events": self.collision_count,
+            "hard_collisions": self.hard_collision_count,
+            "physics_contacts": self.physics_contact_count,
             "altitude_stability_std_m": round(alt_std, 5),
             "mean_trr_percent": round(mean_trr, 2),
+            "cumulative_coverage_percent": round(cumulative_coverage, 2),
+            "unique_pedestrians_spotted": len(self.unique_pedestrians_spotted),
+            "total_pedestrians": len(crowd_positions),
             "total_steps": self.step_count,
             "step_log": self.step_log
         }
@@ -2498,35 +2559,6 @@ class SingleDroneNavigation:
 # position: [x, y, z]  |  orientation: [ax, ay, az, angle]
 # In ENU (Z-up), default Viewpoint orientation looks along -Z (straight down).
 # The existing oblique angle -0.16 0.22 0.96 1.32 gives a good city view.
-_CAM_MODES = {
-    1: {
-        "label":       "Cinematic city (Pan & Tilt)",
-        "position":    [80.0, -100.0, 75.0],
-        "orientation": [-0.16, 0.22, 0.96, 1.32],
-        "follow":      "UAV_0",
-        "followType":  "Pan and Tilt Shot",
-    },
-    2: {
-        "label":       "Smooth chase-cam (custom interpolated follow)",
-        "position":    [80.0, -100.0, 75.0],   # initial seed — overridden each step
-        "orientation": [-0.16, 0.22, 0.96, 1.32],
-        # followType set to None so our manual _update_chase_cam() takes full control
-        "follow":      "UAV_0",
-        "followType":  "None",
-    },
-    3: {
-        "label":       "Top-down overview",
-        "position":    [0.0, 0.0, 130.0],
-        # NOTE: [0,0,1,0] is a degenerate axis-angle (zero angle) and causes Webots
-        # to render a black screen after clock drift. Use a near-identity rotation
-        # around a well-defined axis instead — visually identical but numerically safe.
-        "orientation": [0.0, 1.0, 0.0, 0.0001],  # ~0 rad around Y = looks straight down along -Z
-        "follow":      "",
-        "followType":  "None",
-    },
-}
-
-
 class MultiUAVSurveillance:
 
     def __init__(self):
@@ -2579,25 +2611,7 @@ class MultiUAVSurveillance:
         self.step_count = 0
         self.coverage_log = []
 
-        # ── Camera control ─────────────────────────────────────────────────────
-        self.viewpoint = self.supervisor.getFromDef("MAIN_VIEW")
-        self.cam_mode = 1
-        self._cam_health_counter = 0  # increments each step; triggers recovery check every 500 steps
-        # Task 2: smooth chase-cam lerp state (reset by _set_camera_mode on mode 2 activation)
-        self._chase_smooth_pos    = None   # [x, y, z] lerped viewpoint position
-        self._chase_smooth_target = None   # [x, y, z] lerped look-at point
-        try:
-            self.keyboard = self.supervisor.getKeyboard()
-            self.keyboard.enable(self.timestep)
-            self._kb_available = True
-            print("[UAV Controller] Keyboard successfully enabled and listening.")
-        except Exception as e:
-            print(f"[WARN] Keyboard failed to enable: {e}")
-            self._kb_available = False
-
-        print(f"[UAV Controller] UAVs={len(self.uavs)}, "
-              f"Birds={len(self.birds)}, Crowd={len(self.crowd_nodes)}")
-        self._print_camera_help()
+        
 
         # ── RL Integration Hook ────────────────────────────────────────────────
         import sys
@@ -2636,249 +2650,8 @@ class MultiUAVSurveillance:
         if self.baseline_nav_enabled:
             print("[UAV Controller] Baseline navigation mode ENABLED "
                   "(RL and patrol are inactive).")
-            self._set_camera_mode(2)
 
     # ── Camera control ─────────────────────────────────────────────────────────
-
-    def _print_camera_help(self):
-        """Print camera mode instructions once at startup."""
-        print("\n" + "=" * 52)
-        print("  CAMERA MODES  (click Webots 3D view first)")
-        print("  Key 1 : Cinematic city view  [default]")
-        print("  Key 2 : Chase-cam  (tracks UAV_0 closely)")
-        print("  Key 3 : Top-down overview  (all drones visible)")
-        print("=" * 52 + "\n")
-
-    def _set_camera_mode(self, mode: int):
-        """Switch Viewpoint to the requested camera mode (1/2/3)."""
-        if self.viewpoint is None:
-            print(f"[Camera] MAIN_VIEW not found in scene — skipping")
-            return
-        cfg = _CAM_MODES.get(mode)
-        if cfg is None:
-            return
-        try:
-            self.viewpoint.getField("position").setSFVec3f(cfg["position"])
-            self.viewpoint.getField("orientation").setSFRotation(cfg["orientation"])
-            self.viewpoint.getField("follow").setSFString(cfg["follow"])
-            self.viewpoint.getField("followType").setSFString(cfg["followType"])
-            self.cam_mode = mode
-            print(f"[Camera] Mode {mode} activated — {cfg['label']}")
-            # Reset smooth cam state so mode 2 lerp starts fresh
-            if mode == 2:
-                self._chase_smooth_pos    = None
-                self._chase_smooth_target = None
-                if hasattr(self, '_cam_manual_override_ticks'):
-                    self._cam_manual_override_ticks = 0
-                print("[Camera] Chase-cam smoothing reset — "
-                      "will begin interpolating from current drone position.")
-        except Exception as e:
-            print(f"[Camera] Could not switch mode: {e}")
-
-    def _change_focus(self, uav_name: str):
-        """Dynamically shift camera focus to a specific UAV (UAV_0 to UAV_4)."""
-        if self.viewpoint is None:
-            return
-        try:
-            self.viewpoint.getField("follow").setSFString(uav_name)
-            print(f"[Camera] Focus shifted to: {uav_name}")
-            
-            # Dynamically update camera mode presets so mode switches follow this UAV
-            _CAM_MODES[1]["follow"] = uav_name
-            _CAM_MODES[2]["follow"] = uav_name
-        except Exception as e:
-            print(f"[Camera] Could not shift focus to {uav_name}: {e}")
-
-    # ── Task 2: Smooth Chase Camera ────────────────────────────────────────────
-
-    def _update_chase_cam(self, drone_pos, drone_heading_vec,
-                          lerp_alpha=0.07, behind_dist=14.0,
-                          above_dist=7.0, lookahead=4.0):
-        """
-        Manually position the Viewpoint each step for a smooth third-person chase cam.
-        Includes a manual override check: if the user clicks and drags the camera
-        in the Webots GUI, the supervisor suspends auto-tracking for 250 steps (~5s),
-        allowing full manual viewing and rotation. Auto-tracking then resumes smoothly.
-        """
-        if self.viewpoint is None:
-            return
-
-        # Initialize manual override state
-        if not hasattr(self, '_cam_manual_override_ticks'):
-            self._cam_manual_override_ticks = 0
-            self._last_written_pos = None
-            self._last_written_ori = None
-
-        # Check if user manually dragged the camera in the GUI
-        try:
-            actual_pos = self.viewpoint.getField("position").getSFVec3f()
-            actual_ori = self.viewpoint.getField("orientation").getSFRotation()
-            
-            if self._last_written_pos is not None and self._last_written_ori is not None:
-                pos_diff = math.sqrt(sum((a - b)**2 for a, b in zip(actual_pos, self._last_written_pos)))
-                ori_diff = math.sqrt(sum((a - b)**2 for a, b in zip(actual_ori, self._last_written_ori)))
-                
-                # If there's a significant deviation, the user is manual-dragging
-                if pos_diff > 0.05 or ori_diff > 0.05:
-                    self._cam_manual_override_ticks = 250  # pause auto-chase for 250 steps (~5 seconds)
-                    self._chase_smooth_pos = list(actual_pos)  # sync lerp state to prevent sudden jump
-        except Exception:
-            pass
-
-        # If manual override is active, count down and do not modify the camera viewpoint
-        if self._cam_manual_override_ticks > 0:
-            self._cam_manual_override_ticks -= 1
-            try:
-                # Keep updating written states to match actual user camera position
-                self._last_written_pos = self.viewpoint.getField("position").getSFVec3f()
-                self._last_written_ori = self.viewpoint.getField("orientation").getSFRotation()
-            except Exception:
-                pass
-            return
-
-        # Normalise heading vector (may be (0,0) on first step)
-        hx, hy = drone_heading_vec
-        h_len = math.hypot(hx, hy)
-        if h_len < 1e-4:
-            hx, hy = 1.0, 0.0   # default: face East
-        else:
-            hx, hy = hx / h_len, hy / h_len
-
-        # Desired camera position: behind and above the drone
-        desired_cx = drone_pos[0] - hx * behind_dist
-        desired_cy = drone_pos[1] - hy * behind_dist
-        desired_cz = drone_pos[2] + above_dist
-
-        # Look-at point: slightly ahead of the drone
-        look_x = drone_pos[0] + hx * lookahead
-        look_y = drone_pos[1] + hy * lookahead
-        look_z = drone_pos[2]
-
-        # Initialise smooth state on first call
-        if not hasattr(self, '_chase_smooth_pos') or self._chase_smooth_pos is None:
-            self._chase_smooth_pos    = [desired_cx, desired_cy, desired_cz]
-            self._chase_smooth_target = [look_x, look_y, look_z]
-
-        # Lerp toward desired values
-        sp = self._chase_smooth_pos
-        st = self._chase_smooth_target
-        sp[0] += lerp_alpha * (desired_cx - sp[0])
-        sp[1] += lerp_alpha * (desired_cy - sp[1])
-        sp[2] += lerp_alpha * (desired_cz - sp[2])
-        st[0] += lerp_alpha * (look_x - st[0])
-        st[1] += lerp_alpha * (look_y - st[1])
-        st[2] += lerp_alpha * (look_z - st[2])
-
-        # Derive orientation: axis-angle from camera → look-at direction
-        dx = st[0] - sp[0]
-        dy = st[1] - sp[1]
-        dz = st[2] - sp[2]
-        dist_look = math.sqrt(dx*dx + dy*dy + dz*dz)
-        if dist_look < 1e-3:
-            return   # degenerate — skip this frame
-
-        # Yaw: angle around Z axis
-        yaw = math.atan2(dy, dx)
-        # Pitch: angle downward from horizontal
-        pitch = math.atan2(-dz, math.hypot(dx, dy))
-
-        # tilt axis is perpendicular to heading in horizontal plane: (-hy, hx, 0)
-        tilt_angle = math.radians(25) + pitch   # extra tilt toward drone
-        tilt_ax = -hy
-        tilt_ay =  hx
-        tilt_az =  0.0
-        tilt_len = math.hypot(tilt_ax, tilt_ay)
-        if tilt_len < 1e-4:
-            tilt_ax, tilt_ay = 0.0, 1.0
-        else:
-            tilt_ax /= tilt_len
-            tilt_ay /= tilt_len
-
-        final_ori = [tilt_ax, tilt_ay, tilt_az, tilt_angle + math.pi * 0.05]
-
-        try:
-            self.viewpoint.getField("position").setSFVec3f(list(sp))
-            self.viewpoint.getField("orientation").setSFRotation(final_ori)
-            
-            # Save written state to detect next manual user drag
-            self._last_written_pos = list(sp)
-            self._last_written_ori = list(final_ori)
-        except Exception:
-            pass
-
-    def _validate_and_recover_camera(self):
-        """
-        Periodic camera health check. Detects invalid/degenerate viewpoint state
-        (black-screen conditions) and automatically resets to a safe cinematic view.
-        Called every 500 simulation steps.
-        """
-        if self.viewpoint is None:
-            return
-        try:
-            pos = self.viewpoint.getField("position").getSFVec3f()
-            ori = self.viewpoint.getField("orientation").getSFRotation()
-
-            # Check 1: position outside the world bounds (±500m radius is generous)
-            pos_magnitude = math.sqrt(pos[0]**2 + pos[1]**2 + pos[2]**2)
-            if pos_magnitude > 500.0:
-                print(f"[Camera Recovery] Position out of bounds ({pos_magnitude:.1f}m) — "
-                      f"Resetting to cinematic view")
-                self._set_camera_mode(1)
-                return
-
-            # Check 2: degenerate orientation (near-zero angle = undefined rotation axis)
-            # ori = [ax, ay, az, angle]; if |angle| < 1e-6 and axis not normalized → degenerate
-            angle = abs(ori[3])
-            axis_len = math.sqrt(ori[0]**2 + ori[1]**2 + ori[2]**2)
-            if angle < 1e-6 and axis_len < 0.5:
-                print(f"[Camera Recovery] Degenerate orientation detected "
-                      f"(angle={angle:.2e}, axis_len={axis_len:.3f}) — "
-                      f"Resetting to cinematic view")
-                self._set_camera_mode(1)
-                return
-
-            # Check 3: altitude below ground (camera inside the terrain)
-            if pos[2] < 0.0:
-                print(f"[Camera Recovery] Camera below ground (Z={pos[2]:.1f}m) — "
-                      f"Resetting to cinematic view")
-                self._set_camera_mode(1)
-                return
-
-        except Exception as e:
-            print(f"[Camera Recovery] Health check failed ({e}) — Resetting to cinematic view")
-            try:
-                self._set_camera_mode(1)
-            except Exception:
-                pass
-
-    def _handle_keyboard(self):
-        """Read keyboard and switch camera mode (keys 1-3) or camera focus (keys 4-8)."""
-        if not self._kb_available:
-            return
-        try:
-            key = self.keyboard.getKey()
-            while key > 0:
-                if key == ord('1'):
-                    self._set_camera_mode(1)
-                elif key == ord('2'):
-                    self._set_camera_mode(2)
-                elif key == ord('3'):
-                    self._set_camera_mode(3)
-                elif key == ord('4'):
-                    self._change_focus("UAV_0")
-                elif key == ord('5'):
-                    self._change_focus("UAV_1")
-                elif key == ord('6'):
-                    self._change_focus("UAV_2")
-                elif key == ord('7'):
-                    self._change_focus("UAV_3")
-                elif key == ord('8'):
-                    self._change_focus("UAV_4")
-                key = self.keyboard.getKey()
-        except Exception:
-            pass
-
-    # ── Crowd collection ───────────────────────────────────────────────────────
 
     def _collect_crowd(self):
         """Find all Pedestrian / CrowdAgent nodes in the scene."""
@@ -3011,8 +2784,7 @@ class MultiUAVSurveillance:
             print(f"\n{'='*52}")
             print(f" Step {self.step_count:>6} | "
                   f"Coverage {cov:5.1f}% | "
-                  f"Crowd {len(self.crowd_nodes):>3} | "
-                  f"Cam Mode {self.cam_mode}")
+                  f"Crowd {len(self.crowd_nodes):>3}")
             for i, node in enumerate(self.uavs):
                 p = node.getPosition()
                 print(f"   UAV_{i}: ({p[0]:6.1f}, {p[1]:6.1f}, {p[2]:5.1f})")
@@ -3151,9 +2923,7 @@ class MultiUAVSurveillance:
             # Use cinematic view (mode 1) as default for RL training.
             # Mode 3 top-down used to be forced here but had a degenerate [0,0,1,0]
             # axis-angle orientation that caused black screens after long runs.
-            # Mode 1 uses proven-safe orientation [-0.16, 0.22, 0.96, 1.32].
-            # Press key 3 during runtime for top-down if needed.
-            self._set_camera_mode(1)
+            # Load active PPO trainer in-process
             
             # Load active PPO trainer in-process
             try:
@@ -3189,31 +2959,42 @@ class MultiUAVSurveillance:
             # ── Check for single-drone baseline navigation mode ─────────────────
             if self.baseline_nav_enabled:
                 print("[UAV Controller] Starting Single-Drone Navigation Baseline...")
-                self._set_camera_mode(2)  # chase-cam follows UAV_0 — best for baseline
+                pass
                 nav = SingleDroneNavigation(self, self.baseline_nav_cfg)
                 while self.supervisor.step(self.timestep) != -1:
                     self.step_count += 1
-                    self._handle_keyboard()         # camera mode switching (GUI only)
+                    pass
                     nav.step()                      # navigation state machine
 
-                    # Periodic camera health check
-                    self._cam_health_counter += 1
-                    if self._cam_health_counter % 500 == 0:
-                        self._validate_and_recover_camera()
+                    # Gracefully quit simulator in headless mode once metrics are written
+                    if nav.state == nav.STATE_ARRIVED and nav.arrived_reported:
+                        if nav.is_headless:
+                            print("[UAV Controller] Headless mission complete. Exiting Webots simulator...")
+                            self.supervisor.simulationQuit(0)
+                            break
+
+                    # Safety timeout: limit to 8000 steps to prevent infinite loops
+                    if self.step_count > 8000:
+                        print("[UAV Controller] ERROR: Step limit (8000) exceeded in baseline mode! Auto-quitting...")
+                        if not nav.arrived_reported:
+                            nav._save_metrics()
+                            nav.arrived_reported = True
+                        if nav.is_headless:
+                            self.supervisor.simulationQuit(1)
+                            break
+
+                    pass
             else:
                 # Rule-based baseline patrol (original behaviour)
                 while self.supervisor.step(self.timestep) != -1:
                     self.step_count += 1
-                    self._handle_keyboard()      # camera mode switching (GUI only)
+                    pass
                     self.update_uavs()
                     if self.birds:
                         self.update_birds()
                     self.log_metrics()
 
-                    # Periodic camera health check — recover from black-screen conditions
-                    self._cam_health_counter += 1
-                    if self._cam_health_counter % 500 == 0:
-                        self._validate_and_recover_camera()
+                    pass
 
 
 if __name__ == "__main__":
