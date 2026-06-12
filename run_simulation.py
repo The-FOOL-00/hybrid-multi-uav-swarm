@@ -168,7 +168,7 @@ Examples:
     # ── Build command ─────────────────────────────────────────────────────────
     cmd = [webots_exe]
     if args.headless:
-        cmd += ["--batch", "--minimize", "--no-rendering"]
+        cmd += ["--batch", "--minimize", "--no-rendering", "--mode=fast", "--stdout", "--stderr"]
     cmd.append(world_path)
 
     print(f"Launching: {' '.join(cmd)}\n")
@@ -177,11 +177,12 @@ Examples:
     env = os.environ.copy()
     env["WEBOTS_HEADLESS"] = "true" if args.headless else "false"
     
-    subprocess.Popen(cmd, env=env)
+    proc = subprocess.Popen(cmd, env=env)
 
     if args.headless:
         print("Webots running in headless mode. Metrics will appear in console.")
-        print("Press Ctrl+C to stop.")
+        print("Waiting for simulation to finish...")
+        proc.wait()
     else:
         print("Webots launched. Use Webots Play button to start simulation.")
         print("Coverage metrics will appear in the Webots console every 125 steps.")
