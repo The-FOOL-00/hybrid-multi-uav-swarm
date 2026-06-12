@@ -252,6 +252,25 @@ baseline_navigation:
     yellow_threshold: 0.60      # hit_fraction < this → yellow (nearby)
     red_threshold:    0.30      # hit_fraction < this → red (blocked/close)
 
+    # ── Corner corridor commitment (additive fix for rectangular buildings) ──
+    # When the front ray is blocked AND exactly one front-side ray is clear,
+    # lock the avoidance direction for this many steps instead of re-evaluating
+    # every frame.  Prevents left-right indecision at building corners.
+    # Range: 10–15.  Higher = more committed, may over-steer on tight turns.
+    corridor_commit_steps: 12   # steps to hold committed direction
+
+    # ── Near-wall speed reduction (additive fix) ─────────────────────────────
+    # Gradually slow the drone when the nearest sensor hit is close.
+    # Gives local avoidance more time to react before a corner is reached.
+    # Distance thresholds (metres from drone to nearest hit):
+    slow_start_distance:  8.0   # m — begin scaling down from full speed
+    slow_mid_distance:    5.0   # m — apply slow_mid_scale
+    slow_near_distance:   3.0   # m — apply slow_near_scale
+    # Speed multipliers (fraction of desired speed at each threshold):
+    slow_mid_scale:       0.80  # 80 % speed at slow_mid_distance
+    slow_near_scale:      0.60  # 60 % speed at slow_near_distance
+    emergency_slow_scale: 0.45  # 45 % speed below slow_near_distance
+
 
 rl:
   enabled: false              # TEMPORARILY DISABLED for single-drone baseline
