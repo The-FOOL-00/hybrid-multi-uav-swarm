@@ -18,21 +18,22 @@ Debug/Observability features (active in baseline_nav mode):
 from controller import Supervisor
 import math
 import heapq
-import random
-import os
+import time
 import yaml
+import json
+import os
+import sys
 
-
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # A* GLOBAL PATH PLANNER
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 class AStarPlanner:
     """
     Lightweight 2-D A* path planner on a uniform occupancy grid.
 
     Coordinate mapping
     ------------------
-    World XY → grid (col, row):
+    World XY -> grid (col, row):
         col = int((x + grid_margin) / resolution)
         row = int((y + grid_margin) / resolution)
 
@@ -55,7 +56,7 @@ class AStarPlanner:
     Path smoothing
     --------------
     After raw cell extraction a simple greedy line-of-sight pass removes
-    redundant intermediate waypoints: if the segment (wA → wC) is free of
+    redundant intermediate waypoints: if the segment (wA -> wC) is free of
     obstacles, waypoint wB is dropped.
     """
 
@@ -93,7 +94,7 @@ class AStarPlanner:
               f"({resolution}m/cell) | {blocked}/{total_cells} blocked "
               f"| world +/-{grid_margin}m")
 
-    # ── Grid construction ───────────────────────────────────────────────────
+    # -- Grid construction ---------------------------------------------------
 
     def _build_grid(self) -> list:
         """Return a 2-D list[row][col] of booleans (True = obstacle)."""
@@ -113,7 +114,7 @@ class AStarPlanner:
                         break   # no need to check further buildings
         return grid
 
-    # ── Coordinate helpers ──────────────────────────────────────────────────
+    # -- Coordinate helpers --------------------------------------------------
 
     def _world_to_cell(self, wx: float, wy: float):
         col = int((wx + self.grid_margin) / self.resolution)
@@ -133,7 +134,7 @@ class AStarPlanner:
     def _is_free(self, col: int, row: int) -> bool:
         return self._in_bounds(col, row) and not self.grid[row][col]
 
-    # ── A* core ────────────────────────────────────────────────────────────
+    # -- A* core ------------------------------------------------------------
 
     def _heuristic(self, col: int, row: int, gc: int, gr: int) -> float:
         """Euclidean distance heuristic (in cell units)."""
@@ -220,15 +221,15 @@ class AStarPlanner:
                     heapq.heappush(open_heap, (f, new_g, nc, nr))
                     came_from[neighbour] = node
 
-        print("[A*] WARNING: No path found — falling back to straight line")
+        print("[A*] WARNING: No path found  -  falling back to straight line")
         return []
 
-    # ── Path smoothing ──────────────────────────────────────────────────────
+    # -- Path smoothing ------------------------------------------------------
 
     def _los_clear(self, ax: float, ay: float, bx: float, by: float,
                    samples: int = 20) -> bool:
         """
-        Check if the straight segment (ax,ay)→(bx,by) is free of obstacles.
+        Check if the straight segment (ax,ay)->(bx,by) is free of obstacles.
         Uses point-sampling along the segment.
         """
         for i in range(samples + 1):
@@ -265,7 +266,7 @@ class AStarPlanner:
         print(f"[A*] Smoothed: {len(waypoints)} -> {len(smoothed)} waypoints")
         return smoothed
 
-    # ── Nearest-free helper ─────────────────────────────────────────────────
+    # -- Nearest-free helper -------------------------------------------------
 
     def _nearest_free(self, col: int, row: int, max_search: int = 10):
         """BFS outward to find the closest free cell from a blocked one."""
@@ -289,31 +290,31 @@ class AStarPlanner:
             queue = next_queue
             if len(visited) > (2 * max_search + 1) ** 2:
                 break
-        return col, row   # give up — return original
+        return col, row   # give up  -  return original
 
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # COLLISION SAFETY LAYER
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 class CollisionSafetyLayer:
     """
     Modular collision safety layer that sits between the kinematic flight model
-    and the A* planner.  It is a pure-logic class — it NEVER writes to Webots
+    and the A* planner.  It is a pure-logic class  -  it NEVER writes to Webots
     fields directly; all writes remain in SingleDroneNavigation.
 
     Responsibilities
     ----------------
-    1. Segment validation        : check_segment(p1, p2) — sample N world-space
+    1. Segment validation        : check_segment(p1, p2)  -  sample N world-space
        points; return False if any point is inside a safety-inflated building.
-    2. Nearest safe fallback     : nearest_safe_waypoint() — binary-search along
+    2. Nearest safe fallback     : nearest_safe_waypoint()  -  binary-search along
        the blocked segment for the last safe point, used as a fallback WP.
-    3. Collision state machine   : get_collision_state() — returns
+    3. Collision state machine   : get_collision_state()  -  returns
        "SAFE" / "WARNING" / "EMERGENCY" based on distance to nearest building surface.
-    4. Smooth repulsion vector   : compute_repulsion() — blends away from the
+    4. Smooth repulsion vector   : compute_repulsion()  -  blends away from the
        nearest building with a low-pass filter to prevent oscillation/shaking.
-    5. Debug info                : get_debug_info() — dict consumed by HUD.
-    6. Debug visuals             : spawn_inflation_visuals() — optional translucent
+    5. Debug info                : get_debug_info()  -  dict consumed by HUD.
+    6. Debug visuals             : spawn_inflation_visuals()  -  optional translucent
        red rings around each building at the safety radius (called once at init).
 
     Design Constraints
@@ -334,7 +335,7 @@ class CollisionSafetyLayer:
         ----------
         buildings : list of dict
             Each dict must have keys ``x``, ``y``, ``r`` (world coords + radius).
-            This is the RAW geometric radius — NOT inflated by A*.
+            This is the RAW geometric radius  -  NOT inflated by A*.
         cfg : dict
             The ``collision_safety`` sub-dict from environment_config.yaml.
         """
@@ -378,13 +379,13 @@ class CollisionSafetyLayer:
         self._last_nearest   = None    # (name, surface_dist, bx, by)
         self._last_repulsion = (0.0, 0.0)
 
-        print(f"[CollisionSafety] Initialised — "
+        print(f"[CollisionSafety] Initialised  -  "
               f"safety_radius=+{self.safety_inflation}m  "
               f"danger={self.danger_radius}m  "
               f"emergency={self.emergency_radius}m  "
               f"buildings={len(buildings)}")
 
-    # ── Internal geometry helpers ────────────────────────────────────────────
+    # -- Internal geometry helpers --------------------------------------------
 
     def _nearest_building(self, pos) -> tuple:
         """
@@ -393,7 +394,7 @@ class CollisionSafetyLayer:
         Returns
         -------
         (name, surface_distance, bx, by)
-        surface_distance = centre_dist − safety_inflated_radius
+        surface_distance = centre_dist - safety_inflated_radius
         Negative value means the drone is INSIDE the inflated margin.
         """
         min_surf = float("inf")
@@ -415,12 +416,12 @@ class CollisionSafetyLayer:
                 return True
         return False
 
-    # ── Public API ───────────────────────────────────────────────────────────
+    # -- Public API -----------------------------------------------------------
 
     def check_segment(self, p1, p2) -> bool:
         """
         Sample ``segment_samples`` evenly-spaced points along the 2-D segment
-        p1 → p2 and test each against the safety-inflated building footprints.
+        p1 -> p2 and test each against the safety-inflated building footprints.
 
         Parameters
         ----------
@@ -428,8 +429,8 @@ class CollisionSafetyLayer:
 
         Returns
         -------
-        True  — segment is clear (safe to fly)
-        False — segment is blocked (one or more sample points inside safety margin)
+        True   -  segment is clear (safe to fly)
+        False  -  segment is blocked (one or more sample points inside safety margin)
         """
         if not self.enabled:
             return True
@@ -448,7 +449,7 @@ class CollisionSafetyLayer:
 
     def nearest_safe_waypoint(self, drone_pos, blocked_wp) -> list:
         """
-        Binary-search along drone_pos → blocked_wp for the last safe point.
+        Binary-search along drone_pos -> blocked_wp for the last safe point.
         Returns a world-space [x, y, z] fallback waypoint at 90 % of the
         safe length (providing a small buffer).
 
@@ -460,7 +461,7 @@ class CollisionSafetyLayer:
 
         lo, hi = 0.0, 1.0
         # Binary-search for the largest safe t
-        for _ in range(12):   # 12 bisection steps → precision ~0.02 % of length
+        for _ in range(12):   # 12 bisection steps -> precision ~0.02 % of length
             mid = (lo + hi) / 2.0
             mx  = x1 + mid * (x2 - x1)
             my  = y1 + mid * (y2 - y1)
@@ -471,7 +472,7 @@ class CollisionSafetyLayer:
 
         # Use 90 % of the safe fraction to keep a small buffer
         t_safe = lo * 0.90
-        if t_safe < 0.01:   # essentially at start — can't move toward WP
+        if t_safe < 0.01:   # essentially at start  -  can't move toward WP
             return [x1, y1, z1]
 
         return [
@@ -488,7 +489,7 @@ class CollisionSafetyLayer:
         Also caches the result in self._last_state for HUD consumption.
 
         Improvement 6: emergency threshold tightened slightly so the state
-        machine flows SAFE → WARNING → smooth steering → SAFE rather than
+        machine flows SAFE -> WARNING -> smooth steering -> SAFE rather than
         jumping straight to EMERGENCY.  The danger_radius (WARNING band) is
         now evaluated against a slightly widened window so the drone has more
         time to react before reaching the hard EMERGENCY zone.
@@ -518,7 +519,7 @@ class CollisionSafetyLayer:
 
         Returns
         -------
-        (rx, ry) — normalised repulsion direction (magnitude ≈ 1.0 when active,
+        (rx, ry)  -  normalised repulsion direction (magnitude ~= 1.0 when active,
                    0.0 when SAFE and filter has decayed).
         """
         if not self.enabled or self._last_nearest is None:
@@ -572,13 +573,13 @@ class CollisionSafetyLayer:
         Returns
         -------
         dict with keys:
-            state          — "SAFE" / "WARNING" / "EMERGENCY"
-            nearest_name   — name of closest building (or None)
-            surface_dist   — metres from drone centre to nearest surface
-            danger_radius  — configured threshold
-            emergency_radius — configured threshold
-            repulsion_vec  — (rx, ry) filtered repulsion direction
-            repulsion_mag  — magnitude of repulsion vector
+            state           -  "SAFE" / "WARNING" / "EMERGENCY"
+            nearest_name    -  name of closest building (or None)
+            surface_dist    -  metres from drone centre to nearest surface
+            danger_radius   -  configured threshold
+            emergency_radius  -  configured threshold
+            repulsion_vec   -  (rx, ry) filtered repulsion direction
+            repulsion_mag   -  magnitude of repulsion vector
         """
         nearest_name = None
         surf_dist    = float("inf")
@@ -597,7 +598,7 @@ class CollisionSafetyLayer:
             "repulsion_mag":    math.hypot(rx, ry),
         }
 
-    # ── Debug visualisation ──────────────────────────────────────────────────
+    # -- Debug visualisation --------------------------------------------------
 
     def spawn_inflation_visuals(self, supervisor) -> None:
         """
@@ -609,14 +610,14 @@ class CollisionSafetyLayer:
         they are visible from the chase-cam without obstructing the view.
 
         VISUAL NOTE: The displayed radius is intentionally scaled down by
-        VISUAL_RADIUS_SCALE (≈0.70) relative to the internal safety radius.
-        This is purely cosmetic — it reduces clutter without changing the
+        VISUAL_RADIUS_SCALE (~=0.70) relative to the internal safety radius.
+        This is purely cosmetic  -  it reduces clutter without changing the
         actual collision-avoidance geometry in any way.
         """
-        # ── Improvement 1: visual-only radius reduction (~30%) ────────────────
+        # -- Improvement 1: visual-only radius reduction (~30%) ----------------
         # Internal safety_inflation radius is unchanged.  Only the rendered
         # cylinder is scaled so the red circles are less cluttered in the scene.
-        VISUAL_RADIUS_SCALE = 0.70   # cosmetic scale — does NOT affect collision logic
+        VISUAL_RADIUS_SCALE = 0.70   # cosmetic scale  -  does NOT affect collision logic
 
         if not self.show_inflated_obstacles:
             return
@@ -657,24 +658,24 @@ class CollisionSafetyLayer:
             print(f"[CollisionSafety] Could not spawn inflation visuals (non-fatal): {e}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # LOCAL AVOIDANCE SENSOR  (Phase-1, drone-centered)
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 class LocalAvoidanceSensor:
     """
     Drone-centered virtual 8-ray obstacle sensor for Phase-1 local avoidance.
 
     Design Principles
     -----------------
-    - 8 directional rays cast geometrically — NO Webots hardware sensors.
+    - 8 directional rays cast geometrically  -  NO Webots hardware sensors.
     - Rays are aligned to world-space, rotated by current drone yaw so
       "front" always means the direction the drone is heading.
     - Power-law repulsion falloff: obstacles closer to the drone exert
-      stronger repulsion than distant ones — no binary on/off transitions.
+      stronger repulsion than distant ones  -  no binary on/off transitions.
     - Low-pass filter on the final avoidance vector prevents jitter and
       oscillation in tight corridors.
-    - Output is a blended direction: 0.75 × A* + 0.25 × avoidance.
-      A* is NEVER overridden — this is a steering correction only.
+    - Output is a blended direction: 0.75 x A* + 0.25 x avoidance.
+      A* is NEVER overridden  -  this is a steering correction only.
     - Ray-tip spheres in Webots scene provide real-time visual feedback:
         GREEN  = clear
         YELLOW = nearby obstacle (within yellow_threshold fraction)
@@ -686,13 +687,13 @@ class LocalAvoidanceSensor:
     -------------------------------------------------------------------
     Index  Label         Base Angle (rad)
       0    front          0.0
-      1    front-left     π/4
-      2    left           π/2
-      3    rear-left      3π/4
-      4    rear           π
-      5    rear-right    -3π/4
-      6    right         -π/2
-      7    front-right   -π/4
+      1    front-left     pi/4
+      2    left           pi/2
+      3    rear-left      3pi/4
+      4    rear           pi
+      5    rear-right    -3pi/4
+      6    right         -pi/2
+      7    front-right   -pi/4
     """
 
     # 8 ray definitions: (label, base_angle_rad)
@@ -708,7 +709,7 @@ class LocalAvoidanceSensor:
     ]
     NUM_RAYS = 8
 
-    # Improvement 3: Directional ray weights — front rays dominate steering.
+    # Improvement 3: Directional ray weights  -  front rays dominate steering.
     # Front-facing rays exert the most steering correction; rear rays barely
     # contribute.  This makes the drone steer around buildings earlier instead
     # of reacting only when the obstacle is directly ahead.
@@ -734,7 +735,7 @@ class LocalAvoidanceSensor:
             The ``local_avoidance`` sub-dict from environment_config.yaml.
         """
         self.enabled          = bool(cfg.get("enabled", True))
-        # Improvement 2: default sensor distance raised from 10 → 14 m
+        # Improvement 2: default sensor distance raised from 10 -> 14 m
         self.sensor_distance  = float(cfg.get("sensor_distance", 14.0))
         self.ray_samples      = int(cfg.get("ray_samples", 20))
         # Restored planner dominance
@@ -748,13 +749,35 @@ class LocalAvoidanceSensor:
         # Disabled predictive avoidance
         self.prediction_steps = 0
 
+        # -- [FIX] Corner corridor commitment  -  YAML-configurable --------------
+        self.corridor_commit_steps  = int(cfg.get("corridor_commit_steps",   12))
+
+        # -- [FIX] Near-wall speed reduction  -  YAML-configurable --------------
+        # These values are read by _move_toward_target() via la.slow_*
+        self.slow_start_distance    = float(cfg.get("slow_start_distance",    8.0))
+        self.slow_mid_distance      = float(cfg.get("slow_mid_distance",      5.0))
+        self.slow_near_distance     = float(cfg.get("slow_near_distance",     3.0))
+        self.slow_mid_scale         = float(cfg.get("slow_mid_scale",         0.80))
+        self.slow_near_scale        = float(cfg.get("slow_near_scale",        0.60))
+        self.emergency_slow_scale   = float(cfg.get("emergency_slow_scale",   0.45))
+
         self.buildings        = buildings   # raw geometric buildings
 
         # Low-pass filter state for avoidance vector
         self._smooth_ax = 0.0
         self._smooth_ay = 0.0
 
-        # Per-ray result cache (updated each step) — list of dicts
+        # -- Corridor commitment state -----------------------------------------
+        self._corridor_commit_remaining = 0          # steps left in commitment
+        self._corridor_commit_dir       = (0.0, 0.0) # locked avoidance direction
+
+        # -- Oscillation detection state ---------------------------------------
+        self._direction_flip_count  = 0      # consecutive large direction reversals
+        self._prev_target_ax        = 0.0    # previous normalised target x
+        self._prev_target_ay        = 0.0    # previous normalised target y
+        self._oscillation_detected  = False  # True when avoidance vector flip-flops
+
+        # Per-ray result cache (updated each step)  -  list of dicts
         # Each: {label, hit, hit_fraction, hit_x, hit_y, ray_angle}
         self._ray_results = [
             {"label": lbl, "hit": False, "hit_fraction": 1.0,
@@ -769,11 +792,11 @@ class LocalAvoidanceSensor:
         self._last_nearest_dist  = float("inf")
 
         # Webots scene node references for ray visualization
-        # Populated by spawn_ray_visuals() — None until then
+        # Populated by spawn_ray_visuals()  -  None until then
         self._ray_tf_fields = [None] * self.NUM_RAYS   # translation fields
         self._ray_mat_fields= [None] * self.NUM_RAYS   # emissiveColor fields
 
-        print(f"[LocalAvoidance] Initialised — "
+        print(f"[LocalAvoidance] Initialised  -  "
               f"sensor={self.sensor_distance}m  "
               f"samples={self.ray_samples}  "
               f"blend=A*{self.astar_weight}+avoid{self.avoidance_weight}  "
@@ -781,7 +804,7 @@ class LocalAvoidanceSensor:
               f"prediction_steps={self.prediction_steps}  "
               f"debug_rays={'ON' if self.debug_rays else 'OFF'}")
 
-    # ── Ray casting ──────────────────────────────────────────────────────────
+    # -- Ray casting ----------------------------------------------------------
 
     def _cast_ray(self, ox: float, oy: float, angle: float) -> dict:
         """
@@ -793,9 +816,9 @@ class LocalAvoidanceSensor:
         Returns
         -------
         dict with keys:
-            hit          — True if any sample intersects a building
-            hit_fraction — normalised step index of first hit (0=drone, 1=clear)
-            hit_x, hit_y — world coords of first hit point (0 if no hit)
+            hit           -  True if any sample intersects a building
+            hit_fraction  -  normalised step index of first hit (0=drone, 1=clear)
+            hit_x, hit_y  -  world coords of first hit point (0 if no hit)
         """
         dx = math.cos(angle)
         dy = math.sin(angle)
@@ -813,7 +836,7 @@ class LocalAvoidanceSensor:
                         "hit_y":        sy,
                     }
 
-        # No hit — ray is clear
+        # No hit  -  ray is clear
         tip_x = ox + dx * self.sensor_distance
         tip_y = oy + dy * self.sensor_distance
         return {
@@ -823,7 +846,7 @@ class LocalAvoidanceSensor:
             "hit_y":        tip_y,
         }
 
-    # ── Per-step update ──────────────────────────────────────────────────────
+    # -- Per-step update ------------------------------------------------------
 
     def update(self, drone_pos, drone_yaw: float, drone_vx: float = 0.0, drone_vy: float = 0.0) -> None:
         """
@@ -833,9 +856,9 @@ class LocalAvoidanceSensor:
 
         Improvements applied here
         -------------------------
-        3. Directional weighting — each ray's contribution is scaled by
+        3. Directional weighting  -  each ray's contribution is scaled by
            RAY_WEIGHTS[label] so front rays dominate the steering correction.
-        4. Predictive avoidance — if prediction_steps > 0, a second set of
+        4. Predictive avoidance  -  if prediction_steps > 0, a second set of
            rays is cast from the projected future position:
                future_pos = current_pos + (vx, vy) * prediction_steps
            The current-position result and the future-position result are
@@ -845,8 +868,8 @@ class LocalAvoidanceSensor:
         Parameters
         ----------
         drone_pos : sequence of at least 2 floats (x, y, ...)
-        drone_yaw : float — current heading in radians (ENU yaw from East)
-        drone_vx, drone_vy : float — current XY velocity (m/step), used for
+        drone_yaw : float  -  current heading in radians (ENU yaw from East)
+        drone_vx, drone_vy : float  -  current XY velocity (m/step), used for
             predictive raycasting.  Defaults to 0 (no prediction shift).
         """
         if not self.enabled:
@@ -854,7 +877,7 @@ class LocalAvoidanceSensor:
 
         ox, oy = drone_pos[0], drone_pos[1]
 
-        # ── Cast rays from CURRENT position ──────────────────────────────────
+        # -- Cast rays from CURRENT position ----------------------------------
         raw_ax, raw_ay = 0.0, 0.0
         nearest_frac   = 1.0
         nearest_label  = "none"
@@ -864,7 +887,7 @@ class LocalAvoidanceSensor:
             result      = self._cast_ray(ox, oy, world_angle)
 
             # Improvement 7: ray_results are the single source of truth for
-            # both visualization and HUD — always set hit/hit_fraction here.
+            # both visualization and HUD  -  always set hit/hit_fraction here.
             self._ray_results[i]["label"]        = lbl
             self._ray_results[i]["hit"]          = result["hit"]
             self._ray_results[i]["hit_fraction"] = result["hit_fraction"]
@@ -876,7 +899,7 @@ class LocalAvoidanceSensor:
                 frac = result["hit_fraction"]
                 # Improvement 3: apply directional weight for this ray label
                 dir_weight = self.RAY_WEIGHTS.get(lbl, 1.0)
-                # Power-law falloff: closer hit → stronger repulsion weight
+                # Power-law falloff: closer hit -> stronger repulsion weight
                 repulsion_weight = (1.0 - frac) ** self.repulsion_falloff * dir_weight
                 # Repulsion direction: opposite to the ray direction
                 raw_ax -= math.cos(world_angle) * repulsion_weight
@@ -901,6 +924,51 @@ class LocalAvoidanceSensor:
             target_ay = 0.0
             self._last_active = False
 
+        # -- [FIX-1] Oscillation detection ------------------------------------
+        # Count consecutive steps where the avoidance target reverses by > 120deg.
+        # A sustained flip-flop (> 8 reversals) sets _oscillation_detected,
+        # which halves avoidance authority in _move_toward_target (FIX-3).
+        if raw_mag > 1e-4:
+            dot_prev = (target_ax * self._prev_target_ax +
+                        target_ay * self._prev_target_ay)
+            if dot_prev < -0.5:   # > 120deg reversal from previous step
+                self._direction_flip_count += 1
+            else:
+                self._direction_flip_count = max(0, self._direction_flip_count - 1)
+            self._prev_target_ax = target_ax
+            self._prev_target_ay = target_ay
+        else:
+            self._direction_flip_count = max(0, self._direction_flip_count - 1)
+        self._oscillation_detected = (self._direction_flip_count > 8)
+
+        # -- [FIX-2] Corner corridor commitment -------------------------------
+        # If the front ray is blocked AND exactly one front-side ray is clear,
+        # lock the avoidance direction for corridor_commit_steps to prevent
+        # per-frame left/right indecision at building corners/edges.
+        #
+        # Ray layout (RAY_DEFS indices):
+        #   0 = front   1 = front-left   7 = front-right
+        front_hit = self._ray_results[0]["hit"]
+        fl_hit    = self._ray_results[1]["hit"]
+        fr_hit    = self._ray_results[7]["hit"]
+
+        if self._corridor_commit_remaining > 0:
+            # Active commitment: substitute stored direction into LPF target.
+            # The LPF still smooths this, so no instant heading snap occurs.
+            target_ax, target_ay = self._corridor_commit_dir
+            self._corridor_commit_remaining -= 1
+        elif front_hit and raw_mag > 1e-4:
+            # Only trigger when EXACTLY one front-side is blocked (asymmetric).
+            if fr_hit and not fl_hit:
+                # Right + front blocked, left open -> current avoidance already
+                # points left  -  lock it to avoid right-drift back into wall.
+                self._corridor_commit_dir       = (target_ax, target_ay)
+                self._corridor_commit_remaining = self.corridor_commit_steps
+            elif fl_hit and not fr_hit:
+                # Left + front blocked, right open -> lock avoidance rightward.
+                self._corridor_commit_dir       = (target_ax, target_ay)
+                self._corridor_commit_remaining = self.corridor_commit_steps
+
         # Low-pass filter (prevents oscillation/jitter)
         alpha = self.smoothing_alpha
         self._smooth_ax += alpha * (target_ax - self._smooth_ax)
@@ -916,7 +984,7 @@ class LocalAvoidanceSensor:
 
         self._last_avoidance_vec = (fx, fy)
 
-    # ── Output API ───────────────────────────────────────────────────────────
+    # -- Output API -----------------------------------------------------------
 
     def get_avoidance_vector(self) -> tuple:
         """
@@ -924,7 +992,7 @@ class LocalAvoidanceSensor:
 
         Returns
         -------
-        (ax, ay) — normalised direction to steer away from obstacles.
+        (ax, ay)  -  normalised direction to steer away from obstacles.
                    (0, 0) when no obstacles detected and filter decayed.
         """
         return self._last_avoidance_vec
@@ -940,12 +1008,12 @@ class LocalAvoidanceSensor:
         Returns
         -------
         dict with keys:
-            ray_results     — list of 8 ray result dicts
-            nearest_ray     — label of ray with shortest hit distance
-            nearest_dist_m  — distance in metres to nearest hit
-            avoidance_vec   — (ax, ay) filtered direction
-            avoidance_mag   — magnitude of avoidance vector
-            active          — bool: True if avoidance is non-zero this step
+            ray_results      -  list of 8 ray result dicts
+            nearest_ray      -  label of ray with shortest hit distance
+            nearest_dist_m   -  distance in metres to nearest hit
+            avoidance_vec    -  (ax, ay) filtered direction
+            avoidance_mag    -  magnitude of avoidance vector
+            active           -  bool: True if avoidance is non-zero this step
         """
         ax, ay = self._last_avoidance_vec
         return {
@@ -957,15 +1025,15 @@ class LocalAvoidanceSensor:
             "active":         self._last_active,
         }
 
-    # ── Debug visualisation ──────────────────────────────────────────────────
+    # -- Debug visualisation --------------------------------------------------
 
     def spawn_ray_visuals(self, supervisor) -> None:
         """
-        Spawn 8 small colored spheres in the Webots scene — one at each ray tip.
+        Spawn 8 small colored spheres in the Webots scene  -  one at each ray tip.
         Spheres start green (clear).  Positions and colors are updated each step
         by update_ray_visuals().
 
-        Uses DEF nodes LA_RAY_0 … LA_RAY_7.
+        Uses DEF nodes LA_RAY_0 ... LA_RAY_7.
         Called once during _init_astar() after the scene is fully loaded.
         Gracefully silently skips on any Webots API error.
         """
@@ -1001,7 +1069,7 @@ class LocalAvoidanceSensor:
                 node = supervisor.getFromDef(f"LA_RAY_{i}")
                 if node is not None:
                     self._ray_tf_fields[i]  = node.getField("translation")
-                    # Material node is a child of the shape — access via getFromDef
+                    # Material node is a child of the shape  -  access via getFromDef
                     mat_node = supervisor.getFromDef(f"LA_MAT_{i}")
                     if mat_node is not None:
                         self._ray_mat_fields[i] = mat_node.getField("emissiveColor")
@@ -1017,9 +1085,9 @@ class LocalAvoidanceSensor:
         set its color based on hit state.
 
         Color coding:
-            Green  (0.0, 0.8, 0.0) — no hit (clear)
-            Yellow (0.9, 0.8, 0.0) — hit_fraction >= red_threshold but < yellow_threshold
-            Red    (0.9, 0.1, 0.0) — hit_fraction < red_threshold (close/blocked)
+            Green  (0.0, 0.8, 0.0)  -  no hit (clear)
+            Yellow (0.9, 0.8, 0.0)  -  hit_fraction >= red_threshold but < yellow_threshold
+            Red    (0.9, 0.1, 0.0)  -  hit_fraction < red_threshold (close/blocked)
 
         Called each simulation step from SingleDroneNavigation.step().
         """
@@ -1054,16 +1122,16 @@ class LocalAvoidanceSensor:
             # Color based on hit_fraction
             frac = rr["hit_fraction"]
             if not rr["hit"]:
-                # Green — clear
+                # Green  -  clear
                 color = [0.0, 0.85, 0.0]
             elif frac < self.red_threshold:
-                # Red — close/blocked
+                # Red  -  close/blocked
                 color = [0.95, 0.05, 0.0]
             elif frac < self.yellow_threshold:
-                # Yellow — nearby
+                # Yellow  -  nearby
                 color = [0.95, 0.85, 0.0]
             else:
-                # Green — hit but far enough (beyond yellow threshold)
+                # Green  -  hit but far enough (beyond yellow threshold)
                 color = [0.0, 0.85, 0.0]
 
             try:
@@ -1072,22 +1140,22 @@ class LocalAvoidanceSensor:
                 pass
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # SINGLE-DRONE NAVIGATION BASELINE
 # Phase 1 of the hybrid-multi-UAV-swarm development pipeline.
-# Deterministic start → target mission for engineering baseline validation.
-# ────────────────────────────────────────────────────────────────────────────────
+# Deterministic start -> target mission for engineering baseline validation.
+# --------------------------------------------------------------------------------
 class SingleDroneNavigation:
     """
     Deterministic waypoint navigation for UAV_0 with optional A* global planner.
 
     Algorithm:
-        1. TAKEOFF  — teleport UAV_0 to start_position.
-        2. NAVIGATE — if A* enabled: follow planned waypoint list.
+        1. TAKEOFF   -  teleport UAV_0 to start_position.
+        2. NAVIGATE  -  if A* enabled: follow planned waypoint list.
                       otherwise: steer straight toward target.
                       Each step applies local obstacle repulsion on top
                       of the waypoint steering vector.
-        3. ARRIVED  — once dist_to_target < arrival_radius, stop moving
+        3. ARRIVED   -  once dist_to_target < arrival_radius, stop moving
                       and announce mission complete.
 
     UAV_1-4 are parked at their initial positions and never updated.
@@ -1095,7 +1163,8 @@ class SingleDroneNavigation:
     """
 
     # State constants
-    STATE_TAKEOFF  = "TAKEOFF"
+    STATE_GROUND_IDLE = "GROUND_IDLE"
+    STATE_ASCEND   = "ASCEND"
     STATE_NAVIGATE = "NAVIGATE"
     STATE_ARRIVED  = "ARRIVED"
 
@@ -1126,22 +1195,22 @@ class SingleDroneNavigation:
         self.avoidance_strength = float(cfg.get("avoidance_strength", 1.5))
         self.target_strength    = float(cfg.get("target_strength", 1.0))
 
-        # ── Kinematic flight model state ──────────────────────────────────────
-        # Velocity (m/step) in ENU frame — integrated each step.
+        # -- Kinematic flight model state --------------------------------------
+        # Velocity (m/step) in ENU frame  -  integrated each step.
         self.vx = 0.0
         self.vy = 0.0
         self.vz = 0.0
         # Current heading (radians, ENU yaw from East axis).
         self.current_yaw = 0.0
 
-        # Kinematic parameters — read from YAML with safe defaults.
+        # Kinematic parameters  -  read from YAML with safe defaults.
         self.max_velocity     = float(cfg.get("max_velocity",     0.5))
         self.cruise_velocity  = float(cfg.get("cruise_velocity",  self.cruise_speed))
         self.max_acceleration = float(cfg.get("max_acceleration", 0.05))
         self.max_turn_rate    = float(cfg.get("max_turn_rate",    0.08))  # rad/step
         self.decel_radius     = float(cfg.get("decel_radius",     8.0))   # m
 
-        # ── HUD telemetry (populated each kinematic step) ─────────────────────
+        # -- HUD telemetry (populated each kinematic step) ---------------------
         self.last_avoiding    = False
         self.last_steer_vec   = (0.0, 0.0)
         self.last_velocity    = (0.0, 0.0)   # (vx, vy) for HUD
@@ -1150,7 +1219,7 @@ class SingleDroneNavigation:
         self.last_accel_mag   = 0.0
         self.last_turn_rate   = 0.0          # rad/step applied this step
 
-        # ── Stabilisation state ─────────────────────────────────────────────
+        # -- Stabilisation state ---------------------------------------------
         # Task 3: avoidance gating
         self.emergency_radius       = float(cfg.get("emergency_radius",          4.0))
         # Task 4: yaw low-pass filter
@@ -1185,8 +1254,12 @@ class SingleDroneNavigation:
         self.uav_rf = parent.uav_rot[0]     # rotation field
         self.uav_node = parent.uavs[0]      # Mavic2Pro node
 
-        self.state       = self.STATE_TAKEOFF
+        self.state       = self.STATE_GROUND_IDLE
         self.step_count  = 0
+        self._spinup_counter = 0
+        self.spinup_steps = 100
+        self.takeoff_speed = 0.05
+        self.ground_spawn_z = 0.5
         self.arrived_reported = False
 
         # Dynamically load all buildings from the scene to prevent flying through any buildings
@@ -1194,7 +1267,7 @@ class SingleDroneNavigation:
         self._init_buildings()
         self.last_warning_step = -999
 
-        # ── Metrics collection state ──────────────────────────────────────────
+        # -- Metrics collection state ------------------------------------------
         self.sim_start_time      = None     # supervisor time at first step (s)
         self.distance_travelled  = 0.0      # cumulative 3-D distance (m)
         self.collision_count     = 0        # count of proximity/collision steps
@@ -1206,7 +1279,7 @@ class SingleDroneNavigation:
         self.last_trr            = 0.0
         self.last_tracked_count  = 0
 
-        # ── A* planner setup ──────────────────────────────────────────────
+        # -- A* planner setup ----------------------------------------------
         self.astar_enabled   = bool(cfg.get("astar_enabled", True))
         self.grid_resolution = float(cfg.get("grid_resolution", 2.0))
         self.grid_margin     = float(cfg.get("grid_margin", 90.0))
@@ -1214,24 +1287,24 @@ class SingleDroneNavigation:
         self.waypoint_radius = float(cfg.get("waypoint_radius", 4.0))
         self.show_wp_markers = bool(cfg.get("show_waypoint_markers", True))
 
-        # Waypoint list — populated during first NAVIGATE step via _init_astar()
+        # Waypoint list  -  populated during first NAVIGATE step via _init_astar()
         self.waypoints          = []   # list of [x, y, z]
         self.current_wp_idx     = 0
         self.astar_initialized  = False
         self._marker_nodes      = []   # Webots Solid nodes for visual debug
 
-        # ══════════════════════════════════════════════════════════════════
-        # DEBUG / OBSERVABILITY STATE  (Tasks 1–6)
-        # ══════════════════════════════════════════════════════════════════
+        # ==================================================================
+        # DEBUG / OBSERVABILITY STATE  (Tasks 1-6)
+        # ==================================================================
         self.debug_mode = True          # master switch for all debug visuals
 
-        # Task 1 — debug beacon above UAV_0
+        # Task 1  -  debug beacon above UAV_0
         self._beacon_node = None        # Webots Solid node reference
         self._beacon_tf   = None        # translation field of beacon node
         self._beacon_offset_z = 4.0     # metres above drone centre
 
-        # Task 2 — smooth chase camera (active when cam_mode == 2)
-        # Offset vector in drone heading frame: behind=−ve heading, up=positive Z
+        # Task 2  -  smooth chase camera (active when cam_mode == 2)
+        # Offset vector in drone heading frame: behind=-ve heading, up=positive Z
         self._chase_behind_dist = 14.0  # m behind drone
         self._chase_above_dist  = 7.0   # m above drone
         self._chase_lookahead   = 4.0   # m ahead of drone for look-at target
@@ -1239,7 +1312,7 @@ class SingleDroneNavigation:
         self._cam_smooth_pos    = None  # smoothed viewpoint position [x,y,z]
         self._cam_smooth_target = None  # smoothed look-at point [x,y,z]
 
-        # Task 3 — persistent path trail (blue dots)
+        # Task 3  -  persistent path trail (blue dots)
         self._trail_positions   = []    # sampled drone positions
         self._trail_nodes       = []    # spawned Webots Solid nodes
         self._trail_counter     = 0     # steps since last sample
@@ -1247,10 +1320,10 @@ class SingleDroneNavigation:
         self._trail_max_nodes   = 600   # cap on spawned nodes
         self._trail_radius      = 0.35  # sphere radius (metres)
 
-        # Task 6 — ASCII minimap
+        # Task 6  -  ASCII minimap
         self._minimap_interval  = 200   # print minimap every N steps
 
-        # ── Collision Safety Layer ────────────────────────────────────────────
+        # -- Collision Safety Layer --------------------------------------------
         # Instantiated after _init_buildings() so self.test_buildings is ready.
         # Falls back to an empty cfg (all defaults) if key is absent in YAML.
         _safety_cfg = cfg.get("collision_safety", {})
@@ -1261,9 +1334,9 @@ class SingleDroneNavigation:
         # Cache debug-info dict for HUD (updated every step)
         self._last_safety_info = self.safety_layer.get_debug_info()
 
-        # ── Local Avoidance Sensor ────────────────────────────────────────────
+        # -- Local Avoidance Sensor --------------------------------------------
         # Primary avoidance layer: 8 geometric rays around the drone.
-        # Blends correction with A* direction — A* is NEVER overridden.
+        # Blends correction with A* direction  -  A* is NEVER overridden.
         # Falls back gracefully to empty dict if key absent in YAML.
         _la_cfg = cfg.get("local_avoidance", {})
         self.local_avoidance = LocalAvoidanceSensor(
@@ -1278,7 +1351,7 @@ class SingleDroneNavigation:
 
         self._print_banner()
 
-    # ── Setup helpers ─────────────────────────────────────────────────────
+    # -- Setup helpers -----------------------------------------------------
 
     def _init_buildings(self):
         """
@@ -1385,7 +1458,7 @@ class SingleDroneNavigation:
         print(f"  Altitude        : {self.altitude} m (kinematic Z hold)")
         print(f"  Cruise velocity : {self.cruise_velocity} m/step")
         print(f"  Max velocity    : {self.max_velocity} m/step")
-        print(f"  Max accel       : {self.max_acceleration} m/step\u00b2")
+        print(f"  Max accel       : {self.max_acceleration} m/step?")
         print(f"  Max turn rate   : {math.degrees(self.max_turn_rate):.1f} deg/step")
         print(f"  Decel radius    : {self.decel_radius} m before WP")
         print(f"  Arrival zone    : {self.arrival_radius} m radius")
@@ -1393,7 +1466,7 @@ class SingleDroneNavigation:
         if self.astar_enabled:
             print(f"  Grid res        : {self.grid_resolution} m/cell")
             print(f"  WP radius       : {self.waypoint_radius} m")
-        print("  States       : TAKEOFF \u2192 NAVIGATE \u2192 ARRIVED")
+        print("  States       : TAKEOFF -> NAVIGATE -> ARRIVED")
         print("  -" * 32)
         print("  COLLISION SAFETY LAYER:")
         enabled_str = "ENABLED" if sl.enabled else "DISABLED"
@@ -1432,7 +1505,7 @@ class SingleDroneNavigation:
         print("=" * 64 + "\n")
 
 
-    # ── Navigation logic ─────────────────────────────────────────────────
+    # -- Navigation logic -------------------------------------------------
 
     @staticmethod
     def _dist3(a, b):
@@ -1485,17 +1558,17 @@ class SingleDroneNavigation:
                 raw_wps.extend(segment)
                 current_start = target
             else:
-                print(f"[A*] Warning: leg to {target} failed planning — using straight-line fallback")
+                print(f"[A*] Warning: leg to {target} failed planning  -  using straight-line fallback")
                 raw_wps.append(target)
                 current_start = target
 
-        # Convert (x, y) → [x, y, z] with mission altitude
+        # Convert (x, y) -> [x, y, z] with mission altitude
         self.waypoints = [[wx, wy, self.altitude] for wx, wy in raw_wps]
         self.current_wp_idx = 0
 
-        # ── Task 2: Startup angle sanity check ───────────────────────────────
-        # Compare angle (start→WP0) vs (start→first sweep target).
-        # If WP0 is more than 90° off the first sweep direction, skip it.
+        # -- Task 2: Startup angle sanity check -------------------------------
+        # Compare angle (start->WP0) vs (start->first sweep target).
+        # If WP0 is more than 90deg off the first sweep direction, skip it.
         # This prevents the drone doing a startup U-turn that causes jitter.
         if len(self.waypoints) > 1:
             sx, sy = self.start_pos[0], self.start_pos[1]
@@ -1515,10 +1588,10 @@ class SingleDroneNavigation:
                 angle_deg = math.degrees(math.acos(dot))
                 if angle_deg > 90.0:
                     print(f"[A*] Skipping unstable first waypoint "
-                          f"(angle to first sweep target: {angle_deg:.1f}° > 90°)")
+                          f"(angle to first sweep target: {angle_deg:.1f}deg > 90deg)")
                     self.waypoints.pop(0)
                 else:
-                    print(f"[A*] First waypoint OK (angle to first sweep target: {angle_deg:.1f}°)")
+                    print(f"[A*] First waypoint OK (angle to first sweep target: {angle_deg:.1f}deg)")
 
         print(f"[A*] Waypoint plan ({len(self.waypoints)} waypoints):")
         for i, wp in enumerate(self.waypoints):
@@ -1526,7 +1599,7 @@ class SingleDroneNavigation:
             print(f"  WP[{i:02d}] ({wp[0]:7.2f}, {wp[1]:7.2f}, {wp[2]:.1f}){marker}")
         print()
 
-        # ── Collision Safety Layer: post-planning segment validation ───────────
+        # -- Collision Safety Layer: post-planning segment validation -----------
         # A* can occasionally produce smoothed segments that clip a building
         # corner at the grid-cell boundary.  Re-validate every consecutive WP
         # pair in world-space at the (larger) safety_inflation_radius.
@@ -1538,14 +1611,14 @@ class SingleDroneNavigation:
                 wp = self.waypoints[i]
                 if not self.safety_layer.check_segment(prev_wp, wp):
                     fallback = self.safety_layer.nearest_safe_waypoint(prev_wp, wp)
-                    print(f"  [CollisionSafety] Segment to WP[{i:02d}] BLOCKED — "
+                    print(f"  [CollisionSafety] Segment to WP[{i:02d}] BLOCKED  -  "
                           f"replaced with nearest-safe fallback "
                           f"({fallback[0]:.1f}, {fallback[1]:.1f})")
                     self.waypoints[i] = fallback
                     fixed += 1
                 prev_wp = self.waypoints[i]
             if fixed == 0:
-                print("  [CollisionSafety] All segments clear — no corrections needed.")
+                print("  [CollisionSafety] All segments clear  -  no corrections needed.")
             else:
                 print(f"  [CollisionSafety] Fixed {fixed} blocked segment(s).")
 
@@ -1574,7 +1647,7 @@ class SingleDroneNavigation:
           - Strong emissive glow so markers are visible from far away
           - Floated +1 m above the waypoint altitude
           - Numbered console printout per waypoint
-        Uses supervisor importMFNodeFromString — gracefully skips on any error.
+        Uses supervisor importMFNodeFromString  -  gracefully skips on any error.
         """
         print("[WP Markers] Spawning improved waypoint markers:")
         try:
@@ -1584,12 +1657,12 @@ class SingleDroneNavigation:
             for i, wp in enumerate(self.waypoints):
                 is_final = (i == total - 1)
                 if is_final:
-                    # Bright green — final target
+                    # Bright green  -  final target
                     r, g, b  = 0.0, 1.0, 0.15
                     er, eg, eb = 0.0, 0.85, 0.1
                     label = "FINAL TARGET"
                 else:
-                    # Bright yellow — intermediate waypoint
+                    # Bright yellow  -  intermediate waypoint
                     r, g, b  = 1.0, 1.0, 0.0
                     er, eg, eb = 0.9, 0.9, 0.0
                     label = "intermediate"
@@ -1627,7 +1700,7 @@ class SingleDroneNavigation:
         except Exception as e:
             print(f"[WP Markers] Not spawned (non-fatal): {e}")
 
-    # ── Task 1: Debug Beacon ───────────────────────────────────────────────
+    # -- Task 1: Debug Beacon -----------------------------------------------
 
     def _spawn_debug_beacon(self):
         """No-op: visual debug beacon disabled by request."""
@@ -1637,7 +1710,7 @@ class SingleDroneNavigation:
         """No-op: visual debug beacon disabled by request."""
         pass
 
-    # ── Task 3: Persistent Path Trail ─────────────────────────────────────
+    # -- Task 3: Persistent Path Trail -------------------------------------
 
     def _update_path_trail(self, drone_pos):
         """
@@ -1683,14 +1756,14 @@ class SingleDroneNavigation:
             children_field.importMFNodeFromString(-1, node_str)
             self._trail_nodes.append(idx)   # just store count
         except Exception:
-            pass   # trail spawn failure is silent — never block simulation
+            pass   # trail spawn failure is silent  -  never block simulation
 
-    # ── Task 6: ASCII Minimap ─────────────────────────────────────────────
+    # -- Task 6: ASCII Minimap ---------------------------------------------
 
     def _print_minimap(self, drone_pos):
         """
         Lightweight ASCII minimap printed to console every _minimap_interval steps.
-        Grid: 21 cols × 10 rows representing the ±90m world.
+        Grid: 21 cols x 10 rows representing the +/-90m world.
         Symbols:  D=drone  T=target  B=building  W=waypoint  .=open space
         """
         COLS = 21
@@ -1704,7 +1777,7 @@ class SingleDroneNavigation:
             r = max(0, min(ROWS - 1, r))
             return c, r
 
-        grid = [['·'] * COLS for _ in range(ROWS)]
+        grid = [['.'] * COLS for _ in range(ROWS)]
 
         # Mark buildings
         for b in self.test_buildings:
@@ -1726,14 +1799,14 @@ class SingleDroneNavigation:
         grid[dr][dc] = 'D'
 
         # Render
-        sep = '─' * (COLS * 2 + 1)
-        print(f"\n┌{sep}┐")
+        sep = '-' * (COLS * 2 + 1)
+        print(f"\n+{sep}+")
         for row in grid:
-            print('│ ' + ' '.join(row) + ' │')
-        print(f"└{sep}┘")
+            print('| ' + ' '.join(row) + ' |')
+        print(f"+{sep}+")
         wp_idx = self.current_wp_idx + 1 if self.waypoints else 0
         total_wp = len(self.waypoints)
-        print(f"  ASCII Minimap │ D=drone  T=target  B=building  W=waypoint  "
+        print(f"  ASCII Minimap | D=drone  T=target  B=building  W=waypoint  "
               f"WP={wp_idx}/{total_wp}  "
               f"pos=({drone_pos[0]:.0f},{drone_pos[1]:.0f})")
         print()
@@ -1745,9 +1818,9 @@ class SingleDroneNavigation:
         Algorithm (per step):
           1.  Select steering target (current A* waypoint or final target).
           2.  Compute raw desired heading toward target.
-          3.  Obstacle repulsion — GATED: active only inside emergency_radius
+          3.  Obstacle repulsion  -  GATED: active only inside emergency_radius
               when A* is enabled (Task 3).  Full repulsion when A* disabled.
-          4.  Low-pass filter desired_yaw (Task 4 — yaw_smoothing_alpha).
+          4.  Low-pass filter desired_yaw (Task 4  -  yaw_smoothing_alpha).
           5.  Rotate current_yaw toward filtered desired_yaw by max_turn_rate.
           6.  Desired speed: cruise or decel ramp near WP.
           7.  Velocity damping inside wp_damping_radius (Task 5).
@@ -1760,7 +1833,7 @@ class SingleDroneNavigation:
         """
         cur = list(self.uav_tf.getSFVec3f())
 
-        # ── 1. Select steering target (A* waypoint or final target) ───────
+        # -- 1. Select steering target (A* waypoint or final target) -------
         if self.astar_enabled and self.waypoints:
             wp = self.waypoints[self.current_wp_idx]
             tx, ty = wp[0], wp[1]
@@ -1770,7 +1843,7 @@ class SingleDroneNavigation:
         dx, dy = tx - cur[0], ty - cur[1]
         horiz_dist = math.hypot(dx, dy)
 
-        # Already on target — bleed off velocity and hold
+        # Already on target  -  bleed off velocity and hold
         if horiz_dist < 1e-4:
             self.last_avoiding      = False
             self.last_steer_vec     = (0.0, 0.0)
@@ -1786,26 +1859,26 @@ class SingleDroneNavigation:
             self.last_turn_rate   = 0.0
             return [cur[0] + self.vx, cur[1] + self.vy, self.altitude]
 
-        # ── 2. Raw desired heading toward target ─────────────────────────
+        # -- 2. Raw desired heading toward target -------------------------
         raw_desired_yaw = math.atan2(dy, dx)
 
-        # ── 3. Avoidance: two-tier system ────────────────────────────────────
+        # -- 3. Avoidance: two-tier system ------------------------------------
         #
-        #   Tier 1 (PRIMARY): LocalAvoidanceSensor — 8 drone-centered rays.
+        #   Tier 1 (PRIMARY): LocalAvoidanceSensor  -  8 drone-centered rays.
         #     Active whenever rays detect obstacles.  Blends A* direction with
         #     avoidance direction using configured weights.  Smooth LPF output.
         #
-        #   Tier 2 (FAIL-SAFE): CollisionSafetyLayer — building-surface distance.
+        #   Tier 2 (FAIL-SAFE): CollisionSafetyLayer  -  building-surface distance.
         #     Active only when drone is dangerously close (WARNING/EMERGENCY).
         #     Retained as last-resort protection if local sensing misses something.
         #
         # Both layers can fire simultaneously; their contributions are additive.
-        # A* waypoint target vector is NEVER removed — only blended/steered.
+        # A* waypoint target vector is NEVER removed  -  only blended/steered.
 
         self.last_avoiding   = False
         avoidance_mode       = "DISABLED"
 
-        # ── Stuck detection ──────────────────────────────────────────────────
+        # -- Stuck detection --------------------------------------------------
         self._pos_history.append(list(cur))
         if len(self._pos_history) > 80:
             old_pos = self._pos_history.pop(0)
@@ -1815,7 +1888,7 @@ class SingleDroneNavigation:
         if self._stuck_recovery_steps > 0:
             self._stuck_recovery_steps -= 1
 
-        # ── Tier 1: Local Avoidance Sensor (primary) ─────────────────────────
+        # -- Tier 1: Local Avoidance Sensor (primary) -------------------------
         la = self.local_avoidance
         if la.enabled:
             # update() already called in step() before _move_toward_target()
@@ -1828,6 +1901,13 @@ class SingleDroneNavigation:
                 eff_avoidance_weight *= 0.5
             if self._stuck_recovery_steps > 0:
                 eff_avoidance_weight = 0.0 # Prioritize A* direction completely
+            # -- [FIX-3] Sensor-level oscillation auto-damping -----------------
+            # Complements yaw-based anti-spin: if the avoidance VECTOR itself is
+            # flip-flopping (detected in LocalAvoidanceSensor.update), halve its
+            # authority BEFORE the heading blend, preventing heading oscillation
+            # from propagating upward to the yaw controller.
+            if la._oscillation_detected:
+                eff_avoidance_weight *= 0.5
 
             if la_mag > 1e-4 and eff_avoidance_weight > 0.0:
                 # A* unit direction toward current waypoint / target
@@ -1840,7 +1920,7 @@ class SingleDroneNavigation:
                 clamped_la_x = la_vec[0] * eff_avoidance_weight
                 clamped_la_y = la_vec[1] * eff_avoidance_weight
                 
-                # Blend: astar_weight × A* + avoidance
+                # Blend: astar_weight x A* + avoidance
                 blend_x = astar_ux * la.astar_weight + clamped_la_x
                 blend_y = astar_uy * la.astar_weight + clamped_la_y
                 bl = math.hypot(blend_x, blend_y)
@@ -1852,7 +1932,7 @@ class SingleDroneNavigation:
         else:
             self._last_la_info = {}
 
-        # ── Tier 2: CollisionSafetyLayer (emergency fail-safe only) ──────────
+        # -- Tier 2: CollisionSafetyLayer (emergency fail-safe only) ----------
         # This was the old primary avoidance.  Now it fires ONLY when the drone
         # is already very close to a building (WARNING / EMERGENCY state), acting
         # as a last-resort correction if the local sensor blending was insufficient.
@@ -1909,7 +1989,7 @@ class SingleDroneNavigation:
         self.last_avoidance_mode = avoidance_mode
 
 
-        # ── 4. Low-pass filter on desired_yaw (Task 4) ───────────────────
+        # -- 4. Low-pass filter on desired_yaw (Task 4) -------------------
         # Initialise filter state on first step from current heading
         if self._filtered_desired_yaw is None:
             self._filtered_desired_yaw = raw_desired_yaw
@@ -1925,7 +2005,7 @@ class SingleDroneNavigation:
 
         desired_yaw = self._filtered_desired_yaw
 
-        # ── 5. Smooth yaw toward filtered desired_yaw (max_turn_rate per step) ─
+        # -- 5. Smooth yaw toward filtered desired_yaw (max_turn_rate per step) -
         delta_yaw = desired_yaw - self.current_yaw
         while delta_yaw >  math.pi: delta_yaw -= 2.0 * math.pi
         while delta_yaw < -math.pi: delta_yaw += 2.0 * math.pi
@@ -1954,7 +2034,7 @@ class SingleDroneNavigation:
         while self.current_yaw >  math.pi: self.current_yaw -= 2.0 * math.pi
         while self.current_yaw < -math.pi: self.current_yaw += 2.0 * math.pi
 
-        # ── 6. Desired speed with deceleration ramp near waypoint ─────────
+        # -- 6. Desired speed with deceleration ramp near waypoint ---------
         motion_state = "CRUISE"
         if horiz_dist < self.decel_radius:
             ramp_frac = max(0.05, horiz_dist / self.decel_radius)
@@ -1964,7 +2044,30 @@ class SingleDroneNavigation:
             desired_speed = self.cruise_velocity
         desired_speed = min(desired_speed, self.max_velocity)
 
-        # ── 7. Velocity damping near waypoint to kill oscillation (Task 5) ──
+        # -- [FIX-4] Near-wall speed reduction --------------------------------
+        # Scale down desired_speed when the sensor reports a close obstacle.
+        # This gives local avoidance more frames to react before wall contact.
+        # Thresholds + scales are YAML-configurable via la.slow_*
+        # Does NOT interfere with decel ramp  -  applied multiplicatively after.
+        if la.enabled:
+            nearest_obs_m = self._last_la_info.get("nearest_dist_m", float("inf"))
+            s_start = la.slow_start_distance   # default 8 m
+            s_mid   = la.slow_mid_distance     # default 5 m
+            s_near  = la.slow_near_distance    # default 3 m
+            if nearest_obs_m < s_near:
+                speed_scale = la.emergency_slow_scale   # default 0.45
+            elif nearest_obs_m < s_mid:
+                t = (nearest_obs_m - s_near) / max(s_mid - s_near, 1e-4)
+                speed_scale = la.slow_near_scale + (la.slow_mid_scale - la.slow_near_scale) * t
+            elif nearest_obs_m < s_start:
+                t = (nearest_obs_m - s_mid) / max(s_start - s_mid, 1e-4)
+                speed_scale = la.slow_mid_scale + (1.0 - la.slow_mid_scale) * t
+            else:
+                speed_scale = 1.0
+            desired_speed *= speed_scale
+            desired_speed = min(desired_speed, self.max_velocity)
+
+        # -- 7. Velocity damping near waypoint to kill oscillation (Task 5) --
         if horiz_dist < self.wp_damping_radius:
             self.vx *= self.velocity_damping_factor
             self.vy *= self.velocity_damping_factor
@@ -1972,7 +2075,7 @@ class SingleDroneNavigation:
 
         self.last_motion_state = motion_state
 
-        # ── 8. Desired velocity vector from heading + speed ───────────────
+        # -- 8. Desired velocity vector from heading + speed ---------------
         desired_vx = math.cos(self.current_yaw) * desired_speed
         desired_vy = math.sin(self.current_yaw) * desired_speed
 
@@ -1995,11 +2098,14 @@ class SingleDroneNavigation:
             self.vx *= fac
             self.vy *= fac
 
-        # ── 9. Integrate XY position ──────────────────────────────────────
+        # -- 9. Integrate XY position --------------------------------------
         new_x = cur[0] + self.vx
         new_y = cur[1] + self.vy
 
-        # ── 10. Kinematic Z hold (no PID, no motor thrust) ────────────────
+        # -- 10. Kinematic Z hold (no PID, no motor thrust) ----------------
+        # Hard-clamp altitude to prevent runaway climb from propeller physics.
+        # vz integrator drives toward mission altitude, but new_z is then
+        # clamped to [0, self.altitude] as a safety guarantee.
         z_error = self.altitude - cur[2]
         desired_vz = max(-self.max_acceleration * 2,
                          min(self.max_acceleration * 2, z_error * 0.3))
@@ -2008,8 +2114,16 @@ class SingleDroneNavigation:
                          min(self.max_acceleration * 0.5, dz))
         self.vz += dz_clamped
         new_z = cur[2] + self.vz
+        # HARD CLAMP: never allow altitude to exceed mission altitude.
+        # This prevents propeller thrust accumulation from driving the drone skyward.
+        new_z = max(0.5, min(new_z, self.altitude))
+        # Anti-windup: if we hit the ceiling, zero out vz so we don't bounce.
+        if new_z >= self.altitude:
+            self.vz = 0.0
+        elif new_z <= 0.5:
+            self.vz = 0.0
 
-        # ── Store HUD telemetry ───────────────────────────────────────────
+        # -- Store HUD telemetry -------------------------------------------
         heading_unit = (math.cos(self.current_yaw), math.sin(self.current_yaw))
         self.last_steer_vec      = heading_unit
         self.last_velocity       = (self.vx, self.vy)
@@ -2036,13 +2150,13 @@ class SingleDroneNavigation:
         This guarantees orientation and velocity are always consistent and that
         no instant heading flips can occur regardless of prev/new positions.
         """
-        # Use the smooth kinematic yaw — prev/new_pos kept as parameters for
+        # Use the smooth kinematic yaw  -  prev/new_pos kept as parameters for
         # API compatibility in case callers change in future.
         self.uav_rf.setSFRotation([0.0, 0.0, 1.0, self.current_yaw])
 
-    # ── Per-step update ───────────────────────────────────────────────────
+    # -- Per-step update ---------------------------------------------------
 
-    # ── Per-step update ───────────────────────────────────────────────────
+    # -- Per-step update ---------------------------------------------------
 
     def step(self):
         """
@@ -2070,7 +2184,7 @@ class SingleDroneNavigation:
         # Record altitude
         self.altitude_readings.append(cur[2])
 
-        # ── Calculate TRR (Target Recognition Rate) mathematically ──
+        # -- Calculate TRR (Target Recognition Rate) mathematically --
         crowd_positions = []
         for node in self.parent.crowd_nodes:
             try:
@@ -2089,42 +2203,60 @@ class SingleDroneNavigation:
         self.last_tracked_count = len(tracked)
         self.trr_readings.append(self.last_trr)
 
-        # ── STATE: TAKEOFF ─────────────────────────────────────────────
-        if self.state == self.STATE_TAKEOFF:
-            # Teleport UAV_0 to the fixed start position and zero its physics.
-            # FIX-2: resetPhysics() after setSFVec3f clears any propeller
-            # momentum accumulated since last step, preventing altitude drift.
-            self.uav_tf.setSFVec3f(self.start_pos)
-            self.uav_rf.setSFRotation([0.0, 0.0, 1.0, 0.0])  # face East
-            try:
-                self.uav_node.resetPhysics()   # zero accumulated thrust
-            except Exception:
-                pass
-            print(f"[SingleDroneNav] STATE: TAKEOFF")
-            print(f"  UAV_0 placed at start: {self.start_pos}")
-            print(f"  Target               : {self.target_pos}")
-            total_dist = self._dist3(self.start_pos, self.target_pos)
-            print(f"  Total mission dist   : {total_dist:.1f} m")
-            print(f"  Estimated steps      : ~{int(total_dist / self.cruise_speed)} steps\n")
-            self.state = self.STATE_NAVIGATE
+        # -- STATE: GROUND_IDLE -----------------------------------------
+        if self.state == self.STATE_GROUND_IDLE:
+            if self._spinup_counter == 0:
+                # Place at start pos but on the ground
+                self.uav_tf.setSFVec3f([self.start_pos[0], self.start_pos[1], self.ground_spawn_z])
+                self.uav_rf.setSFRotation([0.0, 0.0, 1.0, 0.0])  # face East
+                try:
+                    self.uav_node.resetPhysics()
+                except Exception:
+                    pass
+                print(f"[SingleDroneNav] STATE: GROUND_IDLE (spin-up {self.spinup_steps} steps)")
+                print(f"  Target               : {self.target_pos}")
+                total_dist = self._dist3(self.start_pos, self.target_pos)
+                print(f"  Total mission dist   : {total_dist:.1f} m")
+                
+            self._spinup_counter += 1
+            if self._spinup_counter >= self.spinup_steps:
+                self.state = self.STATE_ASCEND
+                print(f"[SingleDroneNav] STATE: ASCEND (climbing to {self.altitude}m)")
             return True
 
-        # ── STATE: NAVIGATE ───────────────────────────────────────────
+        # -- STATE: ASCEND ----------------------------------------------
+        if self.state == self.STATE_ASCEND:
+            # Climb smoothly from ground_spawn_z to mission_altitude
+            new_z = min(cur[2] + self.takeoff_speed, self.altitude)
+            
+            self.uav_tf.setSFVec3f([cur[0], cur[1], new_z])
+            try:
+                self.uav_node.resetPhysics()
+            except Exception:
+                pass
+
+            if cur[2] >= self.altitude - 0.5:
+                print(f"[SingleDroneNav] Reached mission altitude. Transitioning to NAVIGATE.")
+                self.state = self.STATE_NAVIGATE
+                
+            return True
+
+        # -- STATE: NAVIGATE -------------------------------------------
         if self.state == self.STATE_NAVIGATE:
 
-            # Lazy A* init — runs once on the very first NAVIGATE step
+            # Lazy A* init  -  runs once on the very first NAVIGATE step
             if self.astar_enabled and not self.astar_initialized:
                 self._init_astar()
 
             dist_to_target = self._dist3(cur, self.target_pos)
 
             if dist_to_target <= self.arrival_radius:
-                # Mission complete — snap exactly to target, hold
+                # Mission complete  -  snap exactly to target, hold
                 self.uav_tf.setSFVec3f(self.target_pos)
                 self.state = self.STATE_ARRIVED
                 return True
 
-            # ── A* waypoint advance with hysteresis lock (Task 1) ────────
+            # -- A* waypoint advance with hysteresis lock (Task 1) --------
             if self.astar_enabled and self.waypoints:
                 wp = self.waypoints[self.current_wp_idx]
                 dist_to_wp = self._dist2(cur, wp)
@@ -2133,7 +2265,7 @@ class SingleDroneNavigation:
                 if self._wp_lock_counter > 0:
                     self._wp_lock_counter -= 1
                     if self._wp_lock_counter == 0:
-                        print(f"  [WP_LOCK] Released — WP[{self.current_wp_idx:02d}] "
+                        print(f"  [WP_LOCK] Released  -  WP[{self.current_wp_idx:02d}] "
                               f"now active  step={self.step_count}")
 
                 # Only advance when lock is not active
@@ -2143,8 +2275,8 @@ class SingleDroneNavigation:
                         candidate_idx = self.current_wp_idx + 1
                         candidate_wp  = self.waypoints[candidate_idx]
 
-                        # ── Safety layer segment check before advancing ──────
-                        # Verify the segment cur → candidate_wp is clear at the
+                        # -- Safety layer segment check before advancing ------
+                        # Verify the segment cur -> candidate_wp is clear at the
                         # safety_inflation_radius BEFORE committing to the advance.
                         seg_clear = self.safety_layer.check_segment(cur, candidate_wp)
                         if not seg_clear:
@@ -2152,7 +2284,7 @@ class SingleDroneNavigation:
                                 cur, candidate_wp
                             )
                             print(f"  [CollisionSafety] WP advance to WP[{candidate_idx:02d}] "
-                                  f"BLOCKED — inserting nearest-safe fallback "
+                                  f"BLOCKED  -  inserting nearest-safe fallback "
                                   f"({fallback[0]:.1f}, {fallback[1]:.1f})  "
                                   f"step={self.step_count}")
                             # Insert fallback ahead of candidate so the drone
@@ -2171,7 +2303,7 @@ class SingleDroneNavigation:
 
             prev_pos = list(cur)
 
-            # ── Pre-movement sensor updates ───────────────────────────────
+            # -- Pre-movement sensor updates -------------------------------
             # Both sensors must update from the CURRENT position before
             # _move_toward_target() reads their cached state.
 
@@ -2194,7 +2326,7 @@ class SingleDroneNavigation:
             except Exception:
                 pass
 
-            # ── DEBUG OBSERVABILITY UPDATES ───────────────────────────────
+            # -- DEBUG OBSERVABILITY UPDATES -------------------------------
             if self.debug_mode:
                 # Task 1: move beacon above drone
                 self._update_debug_beacon(new_pos)
@@ -2215,9 +2347,9 @@ class SingleDroneNavigation:
             # Task 6: ASCII minimap every N steps
             if self.debug_mode and self.step_count % self._minimap_interval == 0:
                 self._print_minimap(new_pos)
-            # ─────────────────────────────────────────────────────────────
+            # -------------------------------------------------------------
 
-            # ── Safety layer: update state + collision telemetry ──────────
+            # -- Safety layer: update state + collision telemetry ----------
             # get_collision_state() caches result internally for HUD.
             safety_state = self.safety_layer.get_collision_state(new_pos)
             self._last_safety_info = self.safety_layer.get_debug_info()
@@ -2259,16 +2391,22 @@ class SingleDroneNavigation:
             if self.step_count % self.log_interval == 0:
                 cur_after = list(self.uav_tf.getSFVec3f())
                 self._log_status(cur_after, dist_to_target, closest_name, min_dist)
+                # TEMPORARY LOGGING FOR STUCK DEBUGGING
+                with open("stuck_debug.log", "a", encoding="utf-8") as f:
+                    f.write(f"Step {self.step_count}: Pos ({cur_after[0]:.1f}, {cur_after[1]:.1f}, {cur_after[2]:.1f}) "
+                            f"TargetDist={dist_to_target:.1f} Nearest={closest_name} ({min_dist:.1f}m) "
+                            f"AvoidMode={self.last_avoidance_mode} State={self.last_motion_state} "
+                            f"Speed={self.last_speed:.3f}\n")
 
             return True
 
-        # ── STATE: ARRIVED ───────────────────────────────────────────
+        # -- STATE: ARRIVED -------------------------------------------
         if self.state == self.STATE_ARRIVED:
             if not self.arrived_reported:
                 self.reached_target = True
                 cur = list(self.uav_tf.getSFVec3f())
                 print("\n" + "=" * 64)
-                print("  ✓ MISSION COMPLETE — UAV_0 ARRIVED AT TARGET")
+                print("  (OK) MISSION COMPLETE  -  UAV_0 ARRIVED AT TARGET")
                 print(f"  Final position : ({cur[0]:.2f}, {cur[1]:.2f}, {cur[2]:.2f})")
                 print(f"  Target         : {self.target_pos}")
                 print(f"  Steps taken    : {self.step_count}")
@@ -2279,7 +2417,12 @@ class SingleDroneNavigation:
                 self._save_metrics()
                 self.arrived_reported = True
                 
-            # Hold position — reset physics every step so propellers
+                if os.environ.get("WEBOTS_HEADLESS", "false").lower() == "true":
+                    print("[HEADLESS] Exiting Webots automatically.")
+                    self.supervisor.simulationQuit(0)
+                    return True
+                
+            # Hold position  -  reset physics every step so propellers
             # don't push the drone away from the target (FIX-2).
             self.uav_tf.setSFVec3f(self.target_pos)
             try:
@@ -2306,7 +2449,7 @@ class SingleDroneNavigation:
         mean_trr = sum(self.trr_readings) / len(self.trr_readings) if self.trr_readings else 0.0
         
         metrics = {
-            "phase": "Phase 1 — Single Drone Lawnmower Patrol & Surveillance Baseline",
+            "phase": "Phase 1  -  Single Drone Lawnmower Patrol & Surveillance Baseline",
             "world": "worlds/single_drone_downtown.wbt",
             "start_pos": self.start_pos,
             "target_pos": self.target_pos,
@@ -2380,7 +2523,7 @@ class SingleDroneNavigation:
             dist_to_wp  = dist_to_target
             lock_str    = "N/A"
 
-        # Nearest obstacle (raw geometry — kept for legacy column)
+        # Nearest obstacle (raw geometry  -  kept for legacy column)
         if closest_bldg and bldg_dist < 999.0:
             obstacle_str = f"{closest_bldg:<14} ({bldg_dist:.1f} m)"
         else:
@@ -2404,45 +2547,45 @@ class SingleDroneNavigation:
         # State string with inline label
         state_label   = f"{coll_state:<9}"  # SAFE / WARNING  / EMERGENCY
 
-        line = "\u2550" * 50
-        print(f"\n\u2554{line}\u2557")
-        print(f"\u2551  DRONE DEBUG STATUS          Step: {self.step_count:>6}        \u2551")
-        print(f"\u2560{line}\u2563")
-        print(f"\u2551  Motion Model     : KINEMATIC + STABILISATION         \u2551")
-        print(f"\u2551  Motion State     : {motion_state:<28} \u2551")
-        print(f"\u2551  Planner          : {planner_str:<28} \u2551")
-        print(f"\u2551  Mission State    : {self.state:<28} \u2551")
-        print(f"\u2551  Avoidance Mode   : {avoid_mode:<28} \u2551")
-        print(f"\u2551  Waypoint         : {wp_idx_str:<8}  -> {wp_pos_str:<16} \u2551")
-        print(f"\u2551  WP Lock          : {lock_str:<28} \u2551")
-        print(f"\u2560{line}\u2563")
-        print(f"\u2551  Current Pos      : ({pos[0]:7.2f}, {pos[1]:7.2f}, {pos[2]:5.2f})      \u2551")
-        print(f"\u2551  Velocity (vx,vy) : ({vel[0]:+7.4f}, {vel[1]:+7.4f})           \u2551")
-        print(f"\u2551  Speed            : {spd:7.4f} m/step  (max: {self.max_velocity:.3f})  \u2551")
-        print(f"\u2551  Accel (ax,ay)    : ({acc[0]:+7.4f}, {acc[1]:+7.4f})           \u2551")
-        print(f"\u2551  Accel magnitude  : {acc_mag:7.4f} m/step\u00b2 (max: {self.max_acceleration:.3f})\u2551")
-        print(f"\u2560{line}\u2563")
-        print(f"\u2551  Yaw (current)    : {yaw_deg:+8.2f} deg                       \u2551")
-        print(f"\u2551  Yaw target (raw) : {raw_yaw_deg:+8.2f} deg                       \u2551")
-        print(f"\u2551  Yaw target (filt): {filt_yaw_deg:+8.2f} deg                       \u2551")
-        print(f"\u2551  Heading error    : {herr_deg:+8.2f} deg                       \u2551")
-        print(f"\u2551  Turn rate        : {math.degrees(turn):+7.3f} deg/step (max: {math.degrees(self.max_turn_rate):.1f})\u2551")
-        print(f"\u2560{line}\u2563")
-        print(f"\u2551  Altitude         : {pos[2]:6.2f} m   (target={self.altitude:.1f} m)       \u2551")
-        print(f"\u2551  Dist to Target   : {dist_to_target:7.2f} m                         \u2551")
-        print(f"\u2551  Dist to WP       : {dist_to_wp:7.2f} m                         \u2551")
-        print(f"\u2551  Nearest Obs.     : {obstacle_str:<28} \u2551")
-        print(f"\u2551  TRR (Crowd)      : {trr_str:<28} \u2551")
-        print(f"\u2560{line}\u2563")
-        print(f"\u2551  \u25ba COLLISION SAFETY LAYER (emergency fail-safe) \u25c4          \u2551")
-        print(f"\u2551  Coll. State      : {state_label:<28} \u2551")
-        print(f"\u2551  Nearest (safety) : {safe_nearest:<14} {safe_dist_str:<13} \u2551")
-        print(f"\u2551  Danger  radius   : {danger_r:5.1f} m  (WARNING threshold)        \u2551")
-        print(f"\u2551  Emerg.  radius   : {emerg_r:5.1f} m  (EMERGENCY threshold)      \u2551")
-        print(f"\u2551  Avoidance vector : {avd_str:<28} \u2551")
-        print(f"\u2560{line}\u2563")
+        line = "=" * 50
+        print(f"\n+{line}+")
+        print(f"|  DRONE DEBUG STATUS          Step: {self.step_count:>6}        |")
+        print(f"+{line}+")
+        print(f"|  Motion Model     : KINEMATIC + STABILISATION         |")
+        print(f"|  Motion State     : {motion_state:<28} |")
+        print(f"|  Planner          : {planner_str:<28} |")
+        print(f"|  Mission State    : {self.state:<28} |")
+        print(f"|  Avoidance Mode   : {avoid_mode:<28} |")
+        print(f"|  Waypoint         : {wp_idx_str:<8}  -> {wp_pos_str:<16} |")
+        print(f"|  WP Lock          : {lock_str:<28} |")
+        print(f"+{line}+")
+        print(f"|  Current Pos      : ({pos[0]:7.2f}, {pos[1]:7.2f}, {pos[2]:5.2f})      |")
+        print(f"|  Velocity (vx,vy) : ({vel[0]:+7.4f}, {vel[1]:+7.4f})           |")
+        print(f"|  Speed            : {spd:7.4f} m/step  (max: {self.max_velocity:.3f})  |")
+        print(f"|  Accel (ax,ay)    : ({acc[0]:+7.4f}, {acc[1]:+7.4f})           |")
+        print(f"|  Accel magnitude  : {acc_mag:7.4f} m/step? (max: {self.max_acceleration:.3f})|")
+        print(f"+{line}+")
+        print(f"|  Yaw (current)    : {yaw_deg:+8.2f} deg                       |")
+        print(f"|  Yaw target (raw) : {raw_yaw_deg:+8.2f} deg                       |")
+        print(f"|  Yaw target (filt): {filt_yaw_deg:+8.2f} deg                       |")
+        print(f"|  Heading error    : {herr_deg:+8.2f} deg                       |")
+        print(f"|  Turn rate        : {math.degrees(turn):+7.3f} deg/step (max: {math.degrees(self.max_turn_rate):.1f})|")
+        print(f"+{line}+")
+        print(f"|  Altitude         : {pos[2]:6.2f} m   (target={self.altitude:.1f} m)       |")
+        print(f"|  Dist to Target   : {dist_to_target:7.2f} m                         |")
+        print(f"|  Dist to WP       : {dist_to_wp:7.2f} m                         |")
+        print(f"|  Nearest Obs.     : {obstacle_str:<28} |")
+        print(f"|  TRR (Crowd)      : {trr_str:<28} |")
+        print(f"+{line}+")
+        print(f"|  > COLLISION SAFETY LAYER (emergency fail-safe) <          |")
+        print(f"|  Coll. State      : {state_label:<28} |")
+        print(f"|  Nearest (safety) : {safe_nearest:<14} {safe_dist_str:<13} |")
+        print(f"|  Danger  radius   : {danger_r:5.1f} m  (WARNING threshold)        |")
+        print(f"|  Emerg.  radius   : {emerg_r:5.1f} m  (EMERGENCY threshold)      |")
+        print(f"|  Avoidance vector : {avd_str:<28} |")
+        print(f"+{line}+")
 
-        # ── Local Avoidance Sensor HUD section ───────────────────────────
+        # -- Local Avoidance Sensor HUD section ---------------------------
         la_info     = getattr(self, '_last_la_info', {})
         la_enabled  = self.local_avoidance.enabled
         la_active   = la_info.get("active",         False)
@@ -2466,35 +2609,35 @@ class SingleDroneNavigation:
             abbr = ray_abbr.get(rr["label"], rr["label"][:2].upper())
             frac = rr["hit_fraction"]
             if not rr["hit"]:
-                tag = f"{abbr}:\u2713"   # checkmark = clear
+                tag = f"{abbr}:(OK)"   # checkmark = clear
             elif frac < self.local_avoidance.red_threshold:
-                tag = f"{abbr}:!!!"      # red — very close
+                tag = f"{abbr}:!!!"      # red  -  very close
             elif frac < self.local_avoidance.yellow_threshold:
-                tag = f"{abbr}:!"        # yellow — nearby
+                tag = f"{abbr}:!"        # yellow  -  nearby
             else:
-                tag = f"{abbr}:\u2713"   # green (hit but far)
+                tag = f"{abbr}:(OK)"   # green (hit but far)
             ray_parts.append(tag)
         ray_status_str = " ".join(ray_parts)
 
-        print(f"\u2551  \u25ba LOCAL AVOIDANCE SENSOR (Phase-1, primary) \u25c4          \u2551")
-        print(f"\u2551  Sensor           : {la_en_str:<28} \u2551")
-        print(f"\u2551  Sensor range     : {self.local_avoidance.sensor_distance:5.1f} m  ({self.local_avoidance.NUM_RAYS} rays)            \u2551")
-        print(f"\u2551  Active           : {la_active_str:<28} \u2551")
-        print(f"\u2551  Nearest hit ray  : {la_near_ray:<28} \u2551")
-        print(f"\u2551  Nearest hit dist : {la_near_d_str:<28} \u2551")
-        print(f"\u2551  Avoidance vector : {la_avec_str:<28} \u2551")
-        # Ray status — may be long; trim to fit box
+        print(f"|  > LOCAL AVOIDANCE SENSOR (Phase-1, primary) <          |")
+        print(f"|  Sensor           : {la_en_str:<28} |")
+        print(f"|  Sensor range     : {self.local_avoidance.sensor_distance:5.1f} m  ({self.local_avoidance.NUM_RAYS} rays)            |")
+        print(f"|  Active           : {la_active_str:<28} |")
+        print(f"|  Nearest hit ray  : {la_near_ray:<28} |")
+        print(f"|  Nearest hit dist : {la_near_d_str:<28} |")
+        print(f"|  Avoidance vector : {la_avec_str:<28} |")
+        # Ray status  -  may be long; trim to fit box
         ray_disp = ray_status_str[:46] if len(ray_status_str) > 46 else ray_status_str
-        print(f"\u2551  Ray states       : {ray_disp:<28} \u2551")
-        print(f"\u255a{line}\u255d")
+        print(f"|  Ray states       : {ray_disp:<28} |")
+        print(f"+{line}+")
 
 
 
 
-# ─────────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------------
 
 
-# ── Camera mode presets ────────────────────────────────────────────────────────
+# -- Camera mode presets --------------------------------------------------------
 # position: [x, y, z]  |  orientation: [ax, ay, az, angle]
 # In ENU (Z-up), default Viewpoint orientation looks along -Z (straight down).
 # The existing oblique angle -0.16 0.22 0.96 1.32 gives a good city view.
@@ -2508,7 +2651,7 @@ _CAM_MODES = {
     },
     2: {
         "label":       "Smooth chase-cam (custom interpolated follow)",
-        "position":    [80.0, -100.0, 75.0],   # initial seed — overridden each step
+        "position":    [80.0, -100.0, 75.0],   # initial seed  -  overridden each step
         "orientation": [-0.16, 0.22, 0.96, 1.32],
         # followType set to None so our manual _update_chase_cam() takes full control
         "follow":      "UAV_0",
@@ -2519,7 +2662,7 @@ _CAM_MODES = {
         "position":    [0.0, 0.0, 130.0],
         # NOTE: [0,0,1,0] is a degenerate axis-angle (zero angle) and causes Webots
         # to render a black screen after clock drift. Use a near-identity rotation
-        # around a well-defined axis instead — visually identical but numerically safe.
+        # around a well-defined axis instead  -  visually identical but numerically safe.
         "orientation": [0.0, 1.0, 0.0, 0.0001],  # ~0 rad around Y = looks straight down along -Z
         "follow":      "",
         "followType":  "None",
@@ -2579,7 +2722,7 @@ class MultiUAVSurveillance:
         self.step_count = 0
         self.coverage_log = []
 
-        # ── Camera control ─────────────────────────────────────────────────────
+        # -- Camera control -----------------------------------------------------
         self.viewpoint = self.supervisor.getFromDef("MAIN_VIEW")
         self.cam_mode = 1
         self._cam_health_counter = 0  # increments each step; triggers recovery check every 500 steps
@@ -2599,7 +2742,7 @@ class MultiUAVSurveillance:
               f"Birds={len(self.birds)}, Crowd={len(self.crowd_nodes)}")
         self._print_camera_help()
 
-        # ── RL Integration Hook ────────────────────────────────────────────────
+        # -- RL Integration Hook ------------------------------------------------
         import sys
         script_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
@@ -2614,7 +2757,7 @@ class MultiUAVSurveillance:
             try:
                 with open(config_path, "r") as f:
                     _cfg = yaml.safe_load(f)
-                # Safely navigate rl.enabled — no manual text scanning
+                # Safely navigate rl.enabled  -  no manual text scanning
                 self.rl_enabled = bool(_cfg.get("rl", {}).get("enabled", False))
                 # Read single-drone baseline navigation config
                 _bn_cfg = _cfg.get("baseline_navigation", {})
@@ -2638,7 +2781,7 @@ class MultiUAVSurveillance:
                   "(RL and patrol are inactive).")
             self._set_camera_mode(2)
 
-    # ── Camera control ─────────────────────────────────────────────────────────
+    # -- Camera control ---------------------------------------------------------
 
     def _print_camera_help(self):
         """Print camera mode instructions once at startup."""
@@ -2652,7 +2795,7 @@ class MultiUAVSurveillance:
     def _set_camera_mode(self, mode: int):
         """Switch Viewpoint to the requested camera mode (1/2/3)."""
         if self.viewpoint is None:
-            print(f"[Camera] MAIN_VIEW not found in scene — skipping")
+            print(f"[Camera] MAIN_VIEW not found in scene  -  skipping")
             return
         cfg = _CAM_MODES.get(mode)
         if cfg is None:
@@ -2663,14 +2806,14 @@ class MultiUAVSurveillance:
             self.viewpoint.getField("follow").setSFString(cfg["follow"])
             self.viewpoint.getField("followType").setSFString(cfg["followType"])
             self.cam_mode = mode
-            print(f"[Camera] Mode {mode} activated — {cfg['label']}")
+            print(f"[Camera] Mode {mode} activated  -  {cfg['label']}")
             # Reset smooth cam state so mode 2 lerp starts fresh
             if mode == 2:
                 self._chase_smooth_pos    = None
                 self._chase_smooth_target = None
                 if hasattr(self, '_cam_manual_override_ticks'):
                     self._cam_manual_override_ticks = 0
-                print("[Camera] Chase-cam smoothing reset — "
+                print("[Camera] Chase-cam smoothing reset  -  "
                       "will begin interpolating from current drone position.")
         except Exception as e:
             print(f"[Camera] Could not switch mode: {e}")
@@ -2689,7 +2832,7 @@ class MultiUAVSurveillance:
         except Exception as e:
             print(f"[Camera] Could not shift focus to {uav_name}: {e}")
 
-    # ── Task 2: Smooth Chase Camera ────────────────────────────────────────────
+    # -- Task 2: Smooth Chase Camera --------------------------------------------
 
     def _update_chase_cam(self, drone_pos, drone_heading_vec,
                           lerp_alpha=0.07, behind_dist=14.0,
@@ -2769,13 +2912,13 @@ class MultiUAVSurveillance:
         st[1] += lerp_alpha * (look_y - st[1])
         st[2] += lerp_alpha * (look_z - st[2])
 
-        # Derive orientation: axis-angle from camera → look-at direction
+        # Derive orientation: axis-angle from camera -> look-at direction
         dx = st[0] - sp[0]
         dy = st[1] - sp[1]
         dz = st[2] - sp[2]
         dist_look = math.sqrt(dx*dx + dy*dy + dz*dz)
         if dist_look < 1e-3:
-            return   # degenerate — skip this frame
+            return   # degenerate  -  skip this frame
 
         # Yaw: angle around Z axis
         yaw = math.atan2(dy, dx)
@@ -2818,34 +2961,34 @@ class MultiUAVSurveillance:
             pos = self.viewpoint.getField("position").getSFVec3f()
             ori = self.viewpoint.getField("orientation").getSFRotation()
 
-            # Check 1: position outside the world bounds (±500m radius is generous)
+            # Check 1: position outside the world bounds (+/-500m radius is generous)
             pos_magnitude = math.sqrt(pos[0]**2 + pos[1]**2 + pos[2]**2)
             if pos_magnitude > 500.0:
-                print(f"[Camera Recovery] Position out of bounds ({pos_magnitude:.1f}m) — "
+                print(f"[Camera Recovery] Position out of bounds ({pos_magnitude:.1f}m)  -  "
                       f"Resetting to cinematic view")
                 self._set_camera_mode(1)
                 return
 
             # Check 2: degenerate orientation (near-zero angle = undefined rotation axis)
-            # ori = [ax, ay, az, angle]; if |angle| < 1e-6 and axis not normalized → degenerate
+            # ori = [ax, ay, az, angle]; if |angle| < 1e-6 and axis not normalized -> degenerate
             angle = abs(ori[3])
             axis_len = math.sqrt(ori[0]**2 + ori[1]**2 + ori[2]**2)
             if angle < 1e-6 and axis_len < 0.5:
                 print(f"[Camera Recovery] Degenerate orientation detected "
-                      f"(angle={angle:.2e}, axis_len={axis_len:.3f}) — "
+                      f"(angle={angle:.2e}, axis_len={axis_len:.3f})  -  "
                       f"Resetting to cinematic view")
                 self._set_camera_mode(1)
                 return
 
             # Check 3: altitude below ground (camera inside the terrain)
             if pos[2] < 0.0:
-                print(f"[Camera Recovery] Camera below ground (Z={pos[2]:.1f}m) — "
+                print(f"[Camera Recovery] Camera below ground (Z={pos[2]:.1f}m)  -  "
                       f"Resetting to cinematic view")
                 self._set_camera_mode(1)
                 return
 
         except Exception as e:
-            print(f"[Camera Recovery] Health check failed ({e}) — Resetting to cinematic view")
+            print(f"[Camera Recovery] Health check failed ({e})  -  Resetting to cinematic view")
             try:
                 self._set_camera_mode(1)
             except Exception:
@@ -2878,7 +3021,7 @@ class MultiUAVSurveillance:
         except Exception:
             pass
 
-    # ── Crowd collection ───────────────────────────────────────────────────────
+    # -- Crowd collection -------------------------------------------------------
 
     def _collect_crowd(self):
         """Find all Pedestrian / CrowdAgent nodes in the scene."""
@@ -2914,7 +3057,7 @@ class MultiUAVSurveillance:
                 if def_name and any(kw in def_name.lower() for kw in ("building", "tower", "office", "hotel", "commercial")):
                     self.building_nodes.append(node)
 
-    # ── UAV patrol ─────────────────────────────────────────────────────────────
+    # -- UAV patrol -------------------------------------------------------------
 
     def _patrol_target(self, uav_idx, t):
         """Circular formation with POMDP-style attention bias."""
@@ -2967,7 +3110,7 @@ class MultiUAVSurveillance:
                     rf.setSFRotation([0.0, 0.0, 1.0, yaw])
             self.prev_targets[i] = target
 
-    # ── Bird flock (fallback if bird_controller not running) ──────────────────
+    # -- Bird flock (fallback if bird_controller not running) ------------------
 
     def update_birds(self):
         t = self.step_count
@@ -2984,7 +3127,7 @@ class MultiUAVSurveillance:
             except Exception:
                 pass
 
-    # ── Surveillance metrics ───────────────────────────────────────────────────
+    # -- Surveillance metrics ---------------------------------------------------
 
     def compute_coverage(self):
         """Grid-cell coverage metric (percentage of 200x200m arena)."""
@@ -3018,7 +3161,7 @@ class MultiUAVSurveillance:
                 print(f"   UAV_{i}: ({p[0]:6.1f}, {p[1]:6.1f}, {p[2]:5.1f})")
             print(f"{'='*52}")
 
-    # ── Main loop ──────────────────────────────────────────────────────────────
+    # -- Main loop --------------------------------------------------------------
 
     def run(self):
         print("[UAV Controller] Surveillance system online.")
@@ -3168,7 +3311,7 @@ class MultiUAVSurveillance:
                 trainer = Trainer(
                     scenario="downtown",
                     episodes=500,
-                    max_steps=5000,       # was 1000 → matched to UAVSwarmEnv.MAX_STEPS
+                    max_steps=5000,       # was 1000 -> matched to UAVSwarmEnv.MAX_STEPS
                     headless=headless_run,  # Dynamically resolved from launch script env var
                     log_interval=10,
                     save_interval=50000,  # Save model checkpoints every 50k steps
@@ -3186,10 +3329,10 @@ class MultiUAVSurveillance:
                 print(f"[ERROR] Trainer execution failed: {e}")
                 raise e
         else:
-            # ── Check for single-drone baseline navigation mode ─────────────────
+            # -- Check for single-drone baseline navigation mode -----------------
             if self.baseline_nav_enabled:
                 print("[UAV Controller] Starting Single-Drone Navigation Baseline...")
-                self._set_camera_mode(2)  # chase-cam follows UAV_0 — best for baseline
+                self._set_camera_mode(2)  # chase-cam follows UAV_0  -  best for baseline
                 nav = SingleDroneNavigation(self, self.baseline_nav_cfg)
                 while self.supervisor.step(self.timestep) != -1:
                     self.step_count += 1
@@ -3210,7 +3353,7 @@ class MultiUAVSurveillance:
                         self.update_birds()
                     self.log_metrics()
 
-                    # Periodic camera health check — recover from black-screen conditions
+                    # Periodic camera health check  -  recover from black-screen conditions
                     self._cam_health_counter += 1
                     if self._cam_health_counter % 500 == 0:
                         self._validate_and_recover_camera()
