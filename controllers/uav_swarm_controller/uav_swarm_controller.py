@@ -1246,6 +1246,7 @@ class SingleDroneNavigation:
         # Stuck detection
         self._pos_history = []
         self._stuck_recovery_steps = 0
+        self._stuck_cooldown_counter = 0
 
         # UAV_0 node references (index 0 in parent lists)
         if len(parent.uav_trans) == 0:
@@ -1879,14 +1880,24 @@ class SingleDroneNavigation:
         avoidance_mode       = "DISABLED"
 
         # -- Stuck detection --------------------------------------------------
+        if self._stuck_cooldown_counter > 0:
+            self._stuck_cooldown_counter -= 1
+
         self._pos_history.append(list(cur))
         if len(self._pos_history) > 80:
             old_pos = self._pos_history.pop(0)
-            if self._dist3(cur, old_pos) < 1.0 and self._stuck_recovery_steps == 0:
-                print("[STUCK DETECTED] Drone displacement < 1m over 80 steps. Prioritizing A* direction.")
+            if (self._stuck_recovery_steps == 0 and 
+                self._stuck_cooldown_counter == 0 and 
+                self._dist3(cur, old_pos) < 2.0 and 
+                self.local_avoidance.is_active()):
+                print("[STUCK_RECOVERY] Entering sidestep mode")
                 self._stuck_recovery_steps = 40
+
         if self._stuck_recovery_steps > 0:
             self._stuck_recovery_steps -= 1
+            if self._stuck_recovery_steps == 0:
+                print("[STUCK_RECOVERY] Exit")
+                self._stuck_cooldown_counter = 120
 
         # -- Tier 1: Local Avoidance Sensor (primary) -------------------------
         la = self.local_avoidance
@@ -1895,12 +1906,10 @@ class SingleDroneNavigation:
             la_vec = la.get_avoidance_vector()   # (ax, ay) LPF'd, normalised
             la_mag = math.hypot(la_vec[0], la_vec[1])
 
-            # Apply Anti-Spin and Stuck Detection modifications
+            # Apply Anti-Spin modifications
             eff_avoidance_weight = la.avoidance_weight
             if self._anti_spin_active_steps > 0:
                 eff_avoidance_weight *= 0.5
-            if self._stuck_recovery_steps > 0:
-                eff_avoidance_weight = 0.0 # Prioritize A* direction completely
             # -- [FIX-3] Sensor-level oscillation auto-damping -----------------
             # Complements yaw-based anti-spin: if the avoidance VECTOR itself is
             # flip-flopping (detected in LocalAvoidanceSensor.update), halve its
@@ -1908,6 +1917,47 @@ class SingleDroneNavigation:
             # from propagating upward to the yaw controller.
             if la._oscillation_detected:
                 eff_avoidance_weight *= 0.5
+
+            # If stuck recovery is active, rotate the avoidance vector by +/- 90 degrees
+            if self._stuck_recovery_steps > 0 and la_mag > 1e-4:
+                # Rotate avoidance vector by +/-90 degrees based on free space
+                forward_ux = math.cos(self.current_yaw)
+                forward_uy = math.sin(self.current_yaw)
+                left_ux = -math.sin(self.current_yaw)
+                left_uy = math.cos(self.current_yaw)
+
+                # Left side score (rays 1, 2, 3)
+                left_score = (la._ray_results[1]["hit_fraction"] +
+                              la._ray_results[2]["hit_fraction"] +
+                              la._ray_results[3]["hit_fraction"])
+
+                # Right side score (rays 5, 6, 7)
+                right_score = (la._ray_results[7]["hit_fraction"] +
+                               la._ray_results[6]["hit_fraction"] +
+                               la._ray_results[5]["hit_fraction"])
+
+                # Candidates: v_ccw (+90 deg) and v_cw (-90 deg)
+                # v_ccw = (-ay, ax)
+                v_ccw = (-la_vec[1], la_vec[0])
+                # v_cw = (ay, -ax)
+                v_cw = (la_vec[1], -la_vec[0])
+
+                # Projections
+                proj_left_ccw = v_ccw[0] * left_ux + v_ccw[1] * left_uy
+                proj_fwd_ccw = v_ccw[0] * forward_ux + v_ccw[1] * forward_uy
+
+                proj_left_cw = v_cw[0] * left_ux + v_cw[1] * left_uy
+                proj_fwd_cw = v_cw[0] * forward_ux + v_cw[1] * forward_uy
+
+                # Selection scores with a forward bias of 1.0
+                diff_score = left_score - right_score
+                score_ccw = diff_score * proj_left_ccw + 1.0 * proj_fwd_ccw
+                score_cw = diff_score * proj_left_cw + 1.0 * proj_fwd_cw
+
+                if score_ccw >= score_cw:
+                    la_vec = v_ccw
+                else:
+                    la_vec = v_cw
 
             if la_mag > 1e-4 and eff_avoidance_weight > 0.0:
                 # A* unit direction toward current waypoint / target
