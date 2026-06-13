@@ -1272,6 +1272,11 @@ class SingleDroneNavigation:
         self.sim_start_time      = None     # supervisor time at first step (s)
         self.distance_travelled  = 0.0      # cumulative 3-D distance (m)
         self.collision_count     = 0        # count of proximity/collision steps
+        self.hard_collision_count = 0       # count of actual building interpenetration steps
+        self.physics_contact_count = 0      # count of steps with physical contact points
+        self.visited_grid_cells  = set()
+        self.grid_cell_size      = 10.0     # 10m x 10m cells
+        self.total_grid_cells    = 400      # (200 / 10) ** 2
         self.altitude_readings   = []       # Z values each step for stability calc
         self.trr_readings        = []       # TRR values each step for average calculation
         self.step_log            = []       # sparse log for JSON export
@@ -2401,6 +2406,21 @@ class SingleDroneNavigation:
                 self._print_minimap(new_pos)
             # -------------------------------------------------------------
 
+            # Update grid coverage tracking
+            cell_x = int(new_pos[0] // self.grid_cell_size)
+            cell_y = int(new_pos[1] // self.grid_cell_size)
+            self.visited_grid_cells.add((cell_x, cell_y))
+
+            # Direct physical collision check using Webots contact points (independent of map!)
+            has_physics_contact = False
+            try:
+                contacts = self.uav_node.getContactPoints()
+                if len(contacts) > 0:
+                    has_physics_contact = True
+                    self.physics_contact_count += 1
+            except Exception:
+                pass
+
             # -- Safety layer: update state + collision telemetry ----------
             # get_collision_state() caches result internally for HUD.
             safety_state = self.safety_layer.get_collision_state(new_pos)
@@ -2410,6 +2430,8 @@ class SingleDroneNavigation:
             closest_name, min_dist, _, _ = self._check_collision_distance(cur)
             if min_dist < self.safety_radius:
                 self.collision_count += 1  # Accumulate proximity warning steps
+            if min_dist < 0.0:
+                self.hard_collision_count += 1  # Accumulate actual building interpenetration steps
 
             if safety_state == CollisionSafetyLayer.EMERGENCY and \
                (self.step_count - self.last_warning_step) > 20:
@@ -2500,6 +2522,9 @@ class SingleDroneNavigation:
         # Mean TRR
         mean_trr = sum(self.trr_readings) / len(self.trr_readings) if self.trr_readings else 0.0
         
+        # Cumulative coverage
+        cumulative_coverage = len(self.visited_grid_cells) / self.total_grid_cells * 100.0 if self.total_grid_cells else 0.0
+
         metrics = {
             "phase": "Phase 1  -  Single Drone Lawnmower Patrol & Surveillance Baseline",
             "world": "worlds/single_drone_downtown.wbt",
@@ -2509,8 +2534,11 @@ class SingleDroneNavigation:
             "travel_time_s": round(travel_time, 3),
             "distance_travelled_m": round(self.distance_travelled, 3),
             "proximity_events": self.collision_count,
+            "hard_collisions": self.hard_collision_count,
+            "physics_contacts": self.physics_contact_count,
             "altitude_stability_std_m": round(alt_std, 5),
             "mean_trr_percent": round(mean_trr, 2),
+            "cumulative_coverage_percent": round(cumulative_coverage, 2),
             "total_steps": self.step_count,
             "step_log": self.step_log
         }
