@@ -35,7 +35,9 @@ def generate_report():
             if valid_vals.empty:
                 return "N/A", "N/A"
             mean_val = valid_vals.mean()
-            std_val = valid_vals.std() if len(valid_vals) > 1 else 0.0
+            if len(valid_vals) <= 1:
+                return f"{mean_val:.2f}", f"N={len(valid_vals)}"
+            std_val = valid_vals.std()
             if pd.isna(std_val):
                 std_val = 0.0
             return f"{mean_val:.2f}", f"±{std_val:.2f}"

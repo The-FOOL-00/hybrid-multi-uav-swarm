@@ -25,10 +25,10 @@ The table below contrasts the metrics from the latest run (**Timestamp: 20260613
 | **Path Length (m)** | 1371.039 | 1142.49 | ±534.84 |
 | **Average Velocity (m/s)** | 30.997 | 33.02 | ±1.97 |
 | **Proximity Warnings** | 128 | 223.09 | ±237.16 |
-| **Near Misses (<=4.0m)** | 835 | 835.00 | ±0.00 |
+| **Near Misses (<=4.0m)** | 835 | 835.00 | N=1 |
 | **Physical Geometry Contacts** | 0 | 0.00 | ±0.00 |
 | **Cumulative Arena Coverage** | 25.0% | 21.91% | ±9.42% |
-| **A* Waypoint Replans / Fallbacks** | 8 | 8.00 | ±0.00 |
+| **A* Waypoint Replans / Fallbacks** | 8 | 8.00 | N=1 |
 | **Total Simulation Steps** | 5530 | 4410.72 | ±2121.59 |
 
 ---
