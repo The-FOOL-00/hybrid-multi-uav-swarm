@@ -2394,13 +2394,7 @@ class SingleDroneNavigation:
                 if self.local_avoidance.enabled and self.local_avoidance.debug_rays:
                     self.local_avoidance.update_ray_visuals(self.supervisor, new_pos)
 
-            # Task 2: smooth chase cam override (only when cam_mode == 2)
-            if self.parent.cam_mode == 2:
-                self.parent._update_chase_cam(
-                    new_pos, self.last_steer_vec, self._chase_lerp_alpha,
-                    self._chase_behind_dist, self._chase_above_dist,
-                    self._chase_lookahead
-                )
+
 
             # Task 6: ASCII minimap every N steps
             if self.debug_mode and self.step_count % self._minimap_interval == 0:
@@ -2708,12 +2702,11 @@ _CAM_MODES = {
         "followType":  "Pan and Tilt Shot",
     },
     2: {
-        "label":       "Smooth chase-cam (custom interpolated follow)",
-        "position":    [80.0, -100.0, 75.0],   # initial seed  -  overridden each step
-        "orientation": [-0.16, 0.22, 0.96, 1.32],
-        # followType set to None so our manual _update_chase_cam() takes full control
+        "label":       "Chase-cam (Webots Tracking Shot)",
+        "position":    [14.288285517172052, -82.68417751996504, 57.06941199587428],
+        "orientation": [0.07663242203175878, 0.17066914565780517, 0.9823485121345423, 1.3436034177699318],
         "follow":      "UAV_0",
-        "followType":  "None",
+        "followType":  "Tracking Shot",
     },
     3: {
         "label":       "Top-down overview",
@@ -2838,11 +2831,6 @@ class MultiUAVSurveillance:
             print("[UAV Controller] Baseline navigation mode ENABLED "
                   "(RL and patrol are inactive).")
             self._set_camera_mode(2)
-            # Seed the chase camera position immediately at startup to avoid incorrect initial view
-            drone_node = self.supervisor.getFromDef("UAV_0")
-            if drone_node is not None:
-                pos = drone_node.getPosition()
-                self._update_chase_cam(pos, [1.0, 0.0])
 
     # -- Camera control ---------------------------------------------------------
 
@@ -2895,122 +2883,7 @@ class MultiUAVSurveillance:
         except Exception as e:
             print(f"[Camera] Could not shift focus to {uav_name}: {e}")
 
-    # -- Task 2: Smooth Chase Camera --------------------------------------------
 
-    def _update_chase_cam(self, drone_pos, drone_heading_vec,
-                          lerp_alpha=0.07, behind_dist=14.0,
-                          above_dist=7.0, lookahead=4.0):
-        """
-        Manually position the Viewpoint each step for a smooth third-person chase cam.
-        Includes a manual override check: if the user clicks and drags the camera
-        in the Webots GUI, the supervisor suspends auto-tracking for 250 steps (~5s),
-        allowing full manual viewing and rotation. Auto-tracking then resumes smoothly.
-        """
-        if self.viewpoint is None:
-            return
-
-        # Initialize manual override state
-        if not hasattr(self, '_cam_manual_override_ticks'):
-            self._cam_manual_override_ticks = 0
-            self._last_written_pos = None
-            self._last_written_ori = None
-
-        # Check if user manually dragged the camera in the GUI
-        try:
-            actual_pos = self.viewpoint.getField("position").getSFVec3f()
-            actual_ori = self.viewpoint.getField("orientation").getSFRotation()
-            
-            if self._last_written_pos is not None and self._last_written_ori is not None:
-                pos_diff = math.sqrt(sum((a - b)**2 for a, b in zip(actual_pos, self._last_written_pos)))
-                ori_diff = math.sqrt(sum((a - b)**2 for a, b in zip(actual_ori, self._last_written_ori)))
-                
-                # If there's a significant deviation, the user is manual-dragging
-                if pos_diff > 0.05 or ori_diff > 0.05:
-                    self._cam_manual_override_ticks = 250  # pause auto-chase for 250 steps (~5 seconds)
-                    self._chase_smooth_pos = list(actual_pos)  # sync lerp state to prevent sudden jump
-        except Exception:
-            pass
-
-        # If manual override is active, count down and do not modify the camera viewpoint
-        if self._cam_manual_override_ticks > 0:
-            self._cam_manual_override_ticks -= 1
-            try:
-                # Keep updating written states to match actual user camera position
-                self._last_written_pos = self.viewpoint.getField("position").getSFVec3f()
-                self._last_written_ori = self.viewpoint.getField("orientation").getSFRotation()
-            except Exception:
-                pass
-            return
-
-        # Normalise heading vector (may be (0,0) on first step)
-        hx, hy = drone_heading_vec
-        h_len = math.hypot(hx, hy)
-        if h_len < 1e-4:
-            hx, hy = 1.0, 0.0   # default: face East
-        else:
-            hx, hy = hx / h_len, hy / h_len
-
-        # Desired camera position: behind and above the drone
-        desired_cx = drone_pos[0] - hx * behind_dist
-        desired_cy = drone_pos[1] - hy * behind_dist
-        desired_cz = drone_pos[2] + above_dist
-
-        # Look-at point: slightly ahead of the drone
-        look_x = drone_pos[0] + hx * lookahead
-        look_y = drone_pos[1] + hy * lookahead
-        look_z = drone_pos[2]
-
-        # Initialise smooth state on first call
-        if not hasattr(self, '_chase_smooth_pos') or self._chase_smooth_pos is None or self._chase_smooth_target is None:
-            self._chase_smooth_pos    = [desired_cx, desired_cy, desired_cz]
-            self._chase_smooth_target = [look_x, look_y, look_z]
-
-        # Lerp toward desired values
-        sp = self._chase_smooth_pos
-        st = self._chase_smooth_target
-        sp[0] += lerp_alpha * (desired_cx - sp[0])
-        sp[1] += lerp_alpha * (desired_cy - sp[1])
-        sp[2] += lerp_alpha * (desired_cz - sp[2])
-        st[0] += lerp_alpha * (look_x - st[0])
-        st[1] += lerp_alpha * (look_y - st[1])
-        st[2] += lerp_alpha * (look_z - st[2])
-
-        # Derive orientation: axis-angle from camera -> look-at direction
-        dx = st[0] - sp[0]
-        dy = st[1] - sp[1]
-        dz = st[2] - sp[2]
-        dist_look = math.sqrt(dx*dx + dy*dy + dz*dz)
-        if dist_look < 1e-3:
-            return   # degenerate  -  skip this frame
-
-        # Yaw: angle around Z axis
-        yaw = math.atan2(dy, dx)
-        # Pitch: angle downward from horizontal
-        pitch = math.atan2(-dz, math.hypot(dx, dy))
-
-        # tilt axis is perpendicular to heading in horizontal plane: (-hy, hx, 0)
-        tilt_angle = math.radians(25) + pitch   # extra tilt toward drone
-        tilt_ax = -hy
-        tilt_ay =  hx
-        tilt_az =  0.0
-        tilt_len = math.hypot(tilt_ax, tilt_ay)
-        if tilt_len < 1e-4:
-            tilt_ax, tilt_ay = 0.0, 1.0
-        else:
-            tilt_ax /= tilt_len
-            tilt_ay /= tilt_len
-
-        final_ori = [tilt_ax, tilt_ay, tilt_az, tilt_angle + math.pi * 0.05]
-
-        try:
-            self.viewpoint.getField("position").setSFVec3f(list(sp))
-            self.viewpoint.getField("orientation").setSFRotation(final_ori)
-            
-            # Save written state to detect next manual user drag
-            self._last_written_pos = list(sp)
-            self._last_written_ori = list(final_ori)
-        except Exception:
-            pass
 
     def _validate_and_recover_camera(self):
         """
