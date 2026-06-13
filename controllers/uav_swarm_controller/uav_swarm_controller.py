@@ -1277,6 +1277,8 @@ class SingleDroneNavigation:
         self.visited_grid_cells  = set()
         self.grid_cell_size      = 10.0     # 10m x 10m cells
         self.total_grid_cells    = 400      # (200 / 10) ** 2
+        self.replan_count        = 1        # A* run count (initial plan is 1)
+        self.near_miss_count     = 0        # count of emergency safety steps
         self.altitude_readings   = []       # Z values each step for stability calc
         self.trr_readings        = []       # TRR values each step for average calculation
         self.step_log            = []       # sparse log for JSON export
@@ -2349,6 +2351,7 @@ class SingleDroneNavigation:
                             # Replace candidate with fallback to avoid feedback loop insertion
                             self.waypoints[candidate_idx] = fallback
                             candidate_wp = fallback
+                            self.replan_count += 1
 
                         self.current_wp_idx += 1
                         new_wp = self.waypoints[self.current_wp_idx]
@@ -2424,6 +2427,8 @@ class SingleDroneNavigation:
             # -- Safety layer: update state + collision telemetry ----------
             # get_collision_state() caches result internally for HUD.
             safety_state = self.safety_layer.get_collision_state(new_pos)
+            if safety_state == CollisionSafetyLayer.EMERGENCY:
+                self.near_miss_count += 1
             self._last_safety_info = self.safety_layer.get_debug_info()
 
             # Legacy lightweight collision check (kept for metrics logging)
@@ -2533,13 +2538,17 @@ class SingleDroneNavigation:
             "reached_target": self.reached_target,
             "travel_time_s": round(travel_time, 3),
             "distance_travelled_m": round(self.distance_travelled, 3),
+            "average_speed_m_s": round(self.distance_travelled / travel_time, 3) if travel_time > 0 else 0.0,
             "proximity_events": self.collision_count,
             "hard_collisions": self.hard_collision_count,
             "physics_contacts": self.physics_contact_count,
+            "near_misses": self.near_miss_count,
+            "replans": self.replan_count,
             "altitude_stability_std_m": round(alt_std, 5),
             "mean_trr_percent": round(mean_trr, 2),
             "cumulative_coverage_percent": round(cumulative_coverage, 2),
             "total_steps": self.step_count,
+            "buildings": [{"name": b["name"], "x": b["x"], "y": b["y"], "r": b["r"]} for b in self.test_buildings],
             "step_log": self.step_log
         }
         
@@ -2550,11 +2559,42 @@ class SingleDroneNavigation:
         out_dir = os.path.join(root_dir, "experiments", "single_drone", timestamp)
         os.makedirs(out_dir, exist_ok=True)
         
+        # Write JSON metrics
         out_path = os.path.join(out_dir, "metrics.json")
         with open(out_path, "w") as fp:
             json.dump(metrics, fp, indent=4)
-            
         print(f"[SingleDrone] Metrics saved successfully -> {out_path}")
+
+        # Write run-specific CSV
+        import csv
+        csv_path = os.path.join(out_dir, "metrics.csv")
+        flat_metrics = {k: v for k, v in metrics.items() if k not in ["step_log", "buildings"]}
+        try:
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(flat_metrics.keys())
+                writer.writerow(flat_metrics.values())
+            print(f"[SingleDrone] Metrics CSV saved successfully -> {csv_path}")
+        except Exception as e:
+            print(f"[SingleDrone][WARN] Failed to write run metrics.csv: {e}")
+
+        # Append to global CSV summary
+        global_csv_path = os.path.join(root_dir, "experiments", "single_drone", "baseline_runs.csv")
+        global_record = {
+            "timestamp": timestamp,
+            "run_id": timestamp,
+        }
+        global_record.update(flat_metrics)
+        try:
+            file_exists = os.path.isfile(global_csv_path)
+            with open(global_csv_path, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=global_record.keys())
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow(global_record)
+            print(f"[SingleDrone] Global summary appended successfully -> {global_csv_path}")
+        except Exception as e:
+            print(f"[SingleDrone][WARN] Failed to append to global CSV: {e}")
 
     def _check_collision_distance(self, pos):
         """Returns (closest_building_name, surface_distance, b_x, b_y)."""
