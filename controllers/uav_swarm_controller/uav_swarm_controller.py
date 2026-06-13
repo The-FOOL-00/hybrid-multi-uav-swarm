@@ -2301,8 +2301,8 @@ class SingleDroneNavigation:
             dist_to_target = self._dist3(cur, self.target_pos)
 
             if dist_to_target <= self.arrival_radius:
-                # Mission complete  -  snap exactly to target, hold
-                self.uav_tf.setSFVec3f(self.target_pos)
+                # Mission complete  -  snap to current position, hold
+                self.uav_tf.setSFVec3f(cur)
                 self.state = self.STATE_ARRIVED
                 return True
 
@@ -2317,6 +2317,10 @@ class SingleDroneNavigation:
                     if self._wp_lock_counter == 0:
                         print(f"  [WP_LOCK] Released  -  WP[{self.current_wp_idx:02d}] "
                               f"now active  step={self.step_count}")
+
+                # Release lock early if we are already very close to the waypoint to avoid orbiting/spinning
+                if dist_to_wp <= self.waypoint_radius * 0.5:
+                    self._wp_lock_counter = 0
 
                 # Only advance when lock is not active
                 if dist_to_wp <= self.waypoint_radius and self._wp_lock_counter == 0:
@@ -2334,12 +2338,11 @@ class SingleDroneNavigation:
                                 cur, candidate_wp
                             )
                             print(f"  [CollisionSafety] WP advance to WP[{candidate_idx:02d}] "
-                                  f"BLOCKED  -  inserting nearest-safe fallback "
+                                  f"BLOCKED  -  replacing with nearest-safe fallback "
                                   f"({fallback[0]:.1f}, {fallback[1]:.1f})  "
                                   f"step={self.step_count}")
-                            # Insert fallback ahead of candidate so the drone
-                            # reaches safety before continuing the sweep.
-                            self.waypoints.insert(candidate_idx, fallback)
+                            # Replace candidate with fallback to avoid feedback loop insertion
+                            self.waypoints[candidate_idx] = fallback
                             candidate_wp = fallback
 
                         self.current_wp_idx += 1
@@ -2350,6 +2353,11 @@ class SingleDroneNavigation:
                               f"({new_wp[0]:.1f}, {new_wp[1]:.1f})  "
                               f"step={self.step_count}")
                         print(f"  [WP_LOCK] Active for {self._wp_lock_counter} steps")
+                    else:
+                        # Reached the final waypoint in the list!
+                        print(f"  [A*] Reached final waypoint WP[{self.current_wp_idx:02d}]  -  declaring mission complete. step={self.step_count}")
+                        self.state = self.STATE_ARRIVED
+                        return True
 
             prev_pos = list(cur)
 
@@ -2474,7 +2482,7 @@ class SingleDroneNavigation:
                 
             # Hold position  -  reset physics every step so propellers
             # don't push the drone away from the target (FIX-2).
-            self.uav_tf.setSFVec3f(self.target_pos)
+            self.uav_tf.setSFVec3f(cur)
             try:
                 self.uav_node.resetPhysics()
             except Exception:
@@ -2830,6 +2838,11 @@ class MultiUAVSurveillance:
             print("[UAV Controller] Baseline navigation mode ENABLED "
                   "(RL and patrol are inactive).")
             self._set_camera_mode(2)
+            # Seed the chase camera position immediately at startup to avoid incorrect initial view
+            drone_node = self.supervisor.getFromDef("UAV_0")
+            if drone_node is not None:
+                pos = drone_node.getPosition()
+                self._update_chase_cam(pos, [1.0, 0.0])
 
     # -- Camera control ---------------------------------------------------------
 
@@ -2948,7 +2961,7 @@ class MultiUAVSurveillance:
         look_z = drone_pos[2]
 
         # Initialise smooth state on first call
-        if not hasattr(self, '_chase_smooth_pos') or self._chase_smooth_pos is None:
+        if not hasattr(self, '_chase_smooth_pos') or self._chase_smooth_pos is None or self._chase_smooth_target is None:
             self._chase_smooth_pos    = [desired_cx, desired_cy, desired_cz]
             self._chase_smooth_target = [look_x, look_y, look_z]
 
