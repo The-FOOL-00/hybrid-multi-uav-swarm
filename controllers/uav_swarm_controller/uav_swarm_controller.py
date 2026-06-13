@@ -2533,6 +2533,7 @@ class SingleDroneNavigation:
         metrics = {
             "phase": "Phase 1  -  Single Drone Lawnmower Patrol & Surveillance Baseline",
             "world": "worlds/single_drone_downtown.wbt",
+            "data_quality": "measured",
             "start_pos": self.start_pos,
             "target_pos": self.target_pos,
             "reached_target": self.reached_target,

@@ -48,6 +48,8 @@ def generate_plots():
                 # Value labels on top of bars
                 for bar in bars:
                     height = bar.get_height()
+                    if pd.isna(height):
+                        continue
                     ax.annotate(f'{height:.1f}' if isinstance(height, float) else f'{height}',
                                 xy=(bar.get_x() + bar.get_width() / 2, height),
                                 xytext=(0, 3),  # 3 points vertical offset

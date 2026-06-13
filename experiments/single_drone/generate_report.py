@@ -31,8 +31,13 @@ def generate_report():
     # Helper for stats
     def get_stats(col):
         if col in df.columns:
-            mean_val = df[col].mean()
-            std_val = df[col].std() if len(df) > 1 else 0.0
+            valid_vals = df[col].dropna()
+            if valid_vals.empty:
+                return "N/A", "N/A"
+            mean_val = valid_vals.mean()
+            std_val = valid_vals.std() if len(valid_vals) > 1 else 0.0
+            if pd.isna(std_val):
+                std_val = 0.0
             return f"{mean_val:.2f}", f"±{std_val:.2f}"
         return "N/A", "N/A"
         
@@ -44,6 +49,10 @@ def generate_report():
     cov_mean, cov_std = get_stats("cumulative_coverage_percent")
     steps_mean, steps_std = get_stats("total_steps")
     replan_mean, replan_std = get_stats("replans")
+    
+    # Formatted latest run values
+    latest_near_misses = f"{latest_run['near_misses']:.0f}" if not pd.isna(latest_run.get('near_misses')) else "N/A"
+    latest_replans = f"{latest_run['replans']:.0f}" if not pd.isna(latest_run.get('replans')) else "N/A"
     
     # Find latest run folder to archive the report
     metrics_files = glob.glob(os.path.join(here, "*", "metrics.json"))
@@ -72,15 +81,16 @@ The table below contrasts the metrics from the latest run (**Timestamp: {timesta
 
 | Metric | Latest Run ({timestamp}) | Historical Average (All {num_runs} Runs) | Variance / Std Dev |
 | :--- | :---: | :---: | :---: |
+| **Data Quality** | `{latest_run.get('data_quality', 'N/A')}` | - | - |
 | **Mission Success** | `{"Passed" if latest_run["reached_target"] else "Failed"}` | {successes}/{num_runs} Passed | {success_rate:.1f}% success |
 | **Travel Time (s)** | {latest_run["travel_time_s"]:.3f} | {time_mean} | {time_std} |
 | **Path Length (m)** | {latest_run["distance_travelled_m"]:.3f} | {dist_mean} | {dist_std} |
 | **Average Velocity (m/s)** | {latest_run["average_speed_m_s"]:.3f} | {speed_mean} | {speed_std} |
 | **Proximity Warnings** | {latest_run["proximity_events"]} | {prox_mean} | {prox_std} |
-| **Near Misses (<=4.0m)** | {latest_run["near_misses"]} | {miss_mean} | {miss_std} |
+| **Near Misses (<=4.0m)** | {latest_near_misses} | {miss_mean} | {miss_std} |
 | **Physical Geometry Contacts** | {latest_run["physics_contacts"]} | {df["physics_contacts"].mean():.2f} | ±{df["physics_contacts"].std() if len(df) > 1 else 0.0:.2f} |
 | **Cumulative Arena Coverage** | {latest_run["cumulative_coverage_percent"]:.1f}% | {cov_mean}% | {cov_std}% |
-| **A* Waypoint Replans / Fallbacks** | {latest_run["replans"]} | {replan_mean} | {replan_std} |
+| **A* Waypoint Replans / Fallbacks** | {latest_replans} | {replan_mean} | {replan_std} |
 | **Total Simulation Steps** | {latest_run["total_steps"]} | {steps_mean} | {steps_std} |
 
 ---
@@ -105,7 +115,7 @@ The bar charts below compare key performance metrics over the last 10 baseline r
 
 1. **Deterministic Execution**: In standard headless mode, the flight path and collision avoidance telemetry yield exactly **0% variance** between identical runs. This confirms the baseline environment is 100% deterministic, providing an ideal reference for PPO training comparisons in Phase 3.
 2. **Zero Geometric Interpenetration**: Throughout all runs, **physical contact events remain at 0**, validating that the combined local avoidance and anti-stuck layers successfully prevent the drone from touching building structures.
-3. **Anti-Stuck Sidestep Performance**: The drone encounters **{latest_run.get('replans', 1) - 1} waypoint fallbacks** and triggers multiple sidesteps. This confirms that the anti-stuck layer is active and successfully navigates around narrow street corners.
+3. **Anti-Stuck Sidestep Performance**: The drone encounters **{int(latest_run['replans']) - 1 if not pd.isna(latest_run.get('replans')) else 0} waypoint fallbacks** and triggers multiple sidesteps. This confirms that the anti-stuck layer is active and successfully navigates around narrow street corners.
 4. **Arena Coverage**: A single drone achieves a steady **25.0% cumulative coverage** of the 200m x 200m arena during its lawnmower transit. This confirms that a lawnmower sweep trajectory provides a reliable baseline coverage profile.
 """
 
