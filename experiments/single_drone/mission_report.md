@@ -4,7 +4,7 @@ This report summarizes the performance benchmarking for Phase 1 (Single Drone La
 
 ---
 
-## 1. Executive Summary
+## Executive Summary
 
 - **Total Runs Checked**: 32
 - **Target Reach Success Rate**: 100.0% (32/32 runs completed)
@@ -13,7 +13,7 @@ This report summarizes the performance benchmarking for Phase 1 (Single Drone La
 
 ---
 
-## 2. Performance Comparison Table
+## Performance Comparison Table
 
 The table below contrasts the metrics from the latest run (**Timestamp: 20260613_203425**) with the historical baseline averages across all 32 runs.
 
@@ -33,7 +33,7 @@ The table below contrasts the metrics from the latest run (**Timestamp: 20260613
 
 ---
 
-## 3. Flight Trajectory Map
+## Flight Trajectory Map
 
 The trajectory plot below illustrates the circular outlines of the downtown buildings, the red dashed line representing safety margins (+5.0m), and the blue line representing the drone's actual XY path during the latest run.
 
@@ -41,7 +41,7 @@ The trajectory plot below illustrates the circular outlines of the downtown buil
 
 ---
 
-## 4. Cross-Run Comparison Charts
+## Cross-Run Comparison Charts
 
 The bar charts below compare key performance metrics over the last 10 baseline runs, displaying trends in mission duration, coverage density, speed, and safety parameters.
 
@@ -49,9 +49,9 @@ The bar charts below compare key performance metrics over the last 10 baseline r
 
 ---
 
-## 5. Key Research Insights
+## Key Research Insights
 
-1. **Deterministic Execution**: In standard headless mode, the flight path and collision avoidance telemetry yield exactly **0% variance** between identical runs. This confirms the baseline environment is 100% deterministic, providing an ideal reference for PPO training comparisons in Phase 3.
-2. **Zero Geometric Interpenetration**: Throughout all runs, **physical contact events remain at 0**, validating that the combined local avoidance and anti-stuck layers successfully prevent the drone from touching building structures.
-3. **Anti-Stuck Sidestep Performance**: The drone encounters **7 waypoint fallbacks** and triggers multiple sidesteps. This confirms that the anti-stuck layer is active and successfully navigates around narrow street corners.
-4. **Arena Coverage**: A single drone achieves a steady **25.0% cumulative coverage** of the 200m x 200m arena during its lawnmower transit. This confirms that a lawnmower sweep trajectory provides a reliable baseline coverage profile.
+- **Deterministic Execution**: In standard headless mode, the flight path and collision avoidance telemetry yield exactly **0% variance** between identical runs. This confirms the baseline environment is 100% deterministic, providing an ideal reference for PPO training comparisons in Phase 3.
+- **Zero Geometric Interpenetration**: Throughout all runs, **physical contact events remain at 0**, validating that the combined local avoidance and anti-stuck layers successfully prevent the drone from touching building structures.
+- **Anti-Stuck Sidestep Performance**: The drone encounters **7 waypoint fallbacks** and triggers multiple sidesteps. This confirms that the anti-stuck layer is active and successfully navigates around narrow street corners.
+- **Arena Coverage**: A single drone achieves a steady **25.0% cumulative coverage** of the 200m x 200m arena during its lawnmower transit. This confirms that a lawnmower sweep trajectory provides a reliable baseline coverage profile.
