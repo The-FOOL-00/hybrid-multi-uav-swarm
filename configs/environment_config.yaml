@@ -157,6 +157,24 @@ baseline_navigation:
   avoidance_strength: 1.5      # multiplier for obstacle repulsion vector
   target_strength: 1.0         # multiplier for target attraction vector
 
+  # ── Modular Path Planner Selection ────────────────────────────────────
+  planner:
+    type: "astar"  # Options: astar, dijkstra, rrt, potential_field
+    astar:
+      heuristic: "euclidean"
+    dijkstra:
+      # No hyperparams needed
+    rrt:
+      max_iterations: 5000
+      step_size: 2.0
+      bidirectional: true
+    potential_field:
+      attractive_gain: 1.0
+      repulsive_gain: 15.0
+      influence_distance: 15.0
+      goal_threshold: 1.0
+      max_steps: 1000
+
   # ── A* Global Path Planner ────────────────────────────────────────────
   astar_enabled: true          # false = fall back to reactive avoidance only
   grid_resolution: 2.0         # metres per grid cell  (smaller = finer, slower)

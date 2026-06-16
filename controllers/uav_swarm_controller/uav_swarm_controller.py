@@ -24,273 +24,13 @@ import json
 import os
 import sys
 
-# ==============================================================================
-# A* GLOBAL PATH PLANNER
-# ==============================================================================
-class AStarPlanner:
-    """
-    Lightweight 2-D A* path planner on a uniform occupancy grid.
-
-    Coordinate mapping
-    ------------------
-    World XY -> grid (col, row):
-        col = int((x + grid_margin) / resolution)
-        row = int((y + grid_margin) / resolution)
-
-    Grid dimensions (cells):
-        width  = height = ceil(2 * grid_margin / resolution) + 1
-
-    Buildings are inflated by `obstacle_inflation` metres before rasterisation
-    so the drone centre never gets closer than that margin to any wall.
-
-    The planner returns a list of world-space (x, y) waypoints extracted from
-    the cell path.  The caller adds the mission altitude (z) before use.
-
-    Algorithm
-    ---------
-    Standard A* with:
-        g(n) = actual cost from start (Euclidean distance between adjacent cells)
-        h(n) = Euclidean distance to goal cell (admissible heuristic)
-        8-connected neighbours (allows diagonal moves)
-
-    Path smoothing
-    --------------
-    After raw cell extraction a simple greedy line-of-sight pass removes
-    redundant intermediate waypoints: if the segment (wA -> wC) is free of
-    obstacles, waypoint wB is dropped.
-    """
-
-    def __init__(self, buildings: list, resolution: float = 2.0,
-                 grid_margin: float = 90.0, obstacle_inflation: float = 2.0):
-        """
-        Parameters
-        ----------
-        buildings : list of dict
-            Each dict must have keys ``x``, ``y``, ``r`` (world coords + radius).
-        resolution : float
-            Grid cell size in metres.
-        grid_margin : float
-            World extends from (-grid_margin) to (+grid_margin) on both axes.
-        obstacle_inflation : float
-            Extra metres added to every building radius before grid marking.
-        """
-        self.resolution = resolution
-        self.grid_margin = grid_margin
-        self.inflation = obstacle_inflation
-        self.buildings = buildings
-
-        # Grid dimensions
-        span = 2.0 * grid_margin
-        self.cols = int(math.ceil(span / resolution)) + 1
-        self.rows = self.cols   # square world
-
-        # Build the occupancy grid (True = blocked)
-        self.grid = self._build_grid()
-
-        total_cells = self.cols * self.rows
-        blocked = sum(1 for r in range(self.rows)
-                      for c in range(self.cols) if self.grid[r][c])
-        print(f"[A*] Grid built: {self.cols}x{self.rows} cells "
-              f"({resolution}m/cell) | {blocked}/{total_cells} blocked "
-              f"| world +/-{grid_margin}m")
-
-    # -- Grid construction ---------------------------------------------------
-
-    def _build_grid(self) -> list:
-        """Return a 2-D list[row][col] of booleans (True = obstacle)."""
-        grid = [[False] * self.cols for _ in range(self.rows)]
-        inflated_buildings = [
-            {"x": b["x"], "y": b["y"], "r": b["r"] + self.inflation}
-            for b in self.buildings
-        ]
-        for row in range(self.rows):
-            wy = row * self.resolution - self.grid_margin
-            for col in range(self.cols):
-                wx = col * self.resolution - self.grid_margin
-                for b in inflated_buildings:
-                    dist = math.hypot(wx - b["x"], wy - b["y"])
-                    if dist <= b["r"]:
-                        grid[row][col] = True
-                        break   # no need to check further buildings
-        return grid
-
-    # -- Coordinate helpers --------------------------------------------------
-
-    def _world_to_cell(self, wx: float, wy: float):
-        col = int((wx + self.grid_margin) / self.resolution)
-        row = int((wy + self.grid_margin) / self.resolution)
-        col = max(0, min(self.cols - 1, col))
-        row = max(0, min(self.rows - 1, row))
-        return col, row
-
-    def _cell_to_world(self, col: int, row: int):
-        wx = col * self.resolution - self.grid_margin
-        wy = row * self.resolution - self.grid_margin
-        return wx, wy
-
-    def _in_bounds(self, col: int, row: int) -> bool:
-        return 0 <= col < self.cols and 0 <= row < self.rows
-
-    def _is_free(self, col: int, row: int) -> bool:
-        return self._in_bounds(col, row) and not self.grid[row][col]
-
-    # -- A* core ------------------------------------------------------------
-
-    def _heuristic(self, col: int, row: int, gc: int, gr: int) -> float:
-        """Euclidean distance heuristic (in cell units)."""
-        return math.hypot(col - gc, row - gr)
-
-    def _reconstruct(self, came_from: dict, current) -> list:
-        """Walk back the came_from dict to build the cell path."""
-        path = []
-        while current is not None:
-            path.append(current)
-            current = came_from.get(current)
-        path.reverse()
-        return path
-
-    def plan(self, start_world, goal_world) -> list:
-        """
-        Run A* from start_world (x,y) to goal_world (x,y).
-
-        Returns
-        -------
-        list of (x, y) world coordinates, including goal but NOT start.
-        Returns empty list if no path found (caller falls back to straight line).
-        """
-        sc, sr = self._world_to_cell(*start_world)
-        gc, gr = self._world_to_cell(*goal_world)
-
-        # Snap start/goal to nearest free cell if they landed inside an obstacle
-        sc, sr = self._nearest_free(sc, sr)
-        gc, gr = self._nearest_free(gc, gr)
-
-        if (sc, sr) == (gc, gr):
-            return [goal_world]
-
-        # Priority queue: (f_cost, g_cost, col, row)
-        open_heap = []
-        heapq.heappush(open_heap, (0.0, 0.0, sc, sr))
-
-        came_from = {(sc, sr): None}
-        g_cost    = {(sc, sr): 0.0}
-
-        # 8-connected neighbours (dx, dy) with move cost
-        NEIGHBOURS = [
-            (-1, -1, 1.4142), (-1, 0, 1.0), (-1, 1, 1.4142),
-            ( 0, -1, 1.0),                   ( 0, 1, 1.0),
-            ( 1, -1, 1.4142), ( 1, 0, 1.0), ( 1, 1, 1.4142),
-        ]
-
-        closed = set()
-
-        while open_heap:
-            _, g, col, row = heapq.heappop(open_heap)
-            node = (col, row)
-
-            if node in closed:
-                continue
-            closed.add(node)
-
-            if node == (gc, gr):
-                cell_path = self._reconstruct(came_from, (gc, gr))
-                world_path = [self._cell_to_world(c, r) for c, r in cell_path]
-                # Remove start position (index 0), keep the rest incl. goal
-                world_path = world_path[1:]
-                # Replace last waypoint with exact goal coordinates if it is free
-                if world_path:
-                    gc_orig, gr_orig = self._world_to_cell(*goal_world)
-                    if self._is_free(gc_orig, gr_orig):
-                        world_path[-1] = goal_world
-                    else:
-                        print(f"[A*] Goal {goal_world} is blocked/inflated. Keeping snapped target {world_path[-1]} to avoid collision.")
-                world_path = self._smooth(world_path)
-                print(f"[A*] Path found: {len(world_path)} waypoints "
-                      f"(raw cell path: {len(cell_path)} cells)")
-                return world_path
-
-            for dc, dr, move_cost in NEIGHBOURS:
-                nc, nr = col + dc, row + dr
-                if not self._is_free(nc, nr):
-                    continue
-                neighbour = (nc, nr)
-                new_g = g + move_cost
-                if new_g < g_cost.get(neighbour, float("inf")):
-                    g_cost[neighbour] = new_g
-                    f = new_g + self._heuristic(nc, nr, gc, gr)
-                    heapq.heappush(open_heap, (f, new_g, nc, nr))
-                    came_from[neighbour] = node
-
-        print("[A*] WARNING: No path found  -  falling back to straight line")
-        return []
-
-    # -- Path smoothing ------------------------------------------------------
-
-    def _los_clear(self, ax: float, ay: float, bx: float, by: float,
-                   samples: int = 20) -> bool:
-        """
-        Check if the straight segment (ax,ay)->(bx,by) is free of obstacles.
-        Uses point-sampling along the segment.
-        """
-        for i in range(samples + 1):
-            t = i / samples
-            wx = ax + t * (bx - ax)
-            wy = ay + t * (by - ay)
-            col, row = self._world_to_cell(wx, wy)
-            if not self._is_free(col, row):
-                return False
-        return True
-
-    def _smooth(self, waypoints: list) -> list:
-        """
-        Greedy line-of-sight waypoint smoother.
-        Removes intermediate waypoints that are visible from the previous one.
-        """
-        if len(waypoints) <= 2:
-            return waypoints
-
-        smoothed = [waypoints[0]]
-        i = 0
-        while i < len(waypoints) - 1:
-            # Find the furthest visible waypoint from smoothed[-1]
-            j = len(waypoints) - 1
-            while j > i + 1:
-                ax, ay = smoothed[-1]
-                bx, by = waypoints[j]
-                if self._los_clear(ax, ay, bx, by):
-                    break
-                j -= 1
-            smoothed.append(waypoints[j])
-            i = j
-
-        print(f"[A*] Smoothed: {len(waypoints)} -> {len(smoothed)} waypoints")
-        return smoothed
-
-    # -- Nearest-free helper -------------------------------------------------
-
-    def _nearest_free(self, col: int, row: int, max_search: int = 10):
-        """BFS outward to find the closest free cell from a blocked one."""
-        if self._is_free(col, row):
-            return col, row
-        visited = set()
-        queue = [(col, row)]
-        visited.add((col, row))
-        while queue:
-            next_queue = []
-            for c, r in queue:
-                for dc in range(-1, 2):
-                    for dr in range(-1, 2):
-                        nc, nr = c + dc, r + dr
-                        if (nc, nr) in visited:
-                            continue
-                        visited.add((nc, nr))
-                        if self._is_free(nc, nr):
-                            return nc, nr
-                        next_queue.append((nc, nr))
-            queue = next_queue
-            if len(visited) > (2 * max_search + 1) ** 2:
-                break
-        return col, row   # give up  -  return original
+# Ensure planners package is discoverable
+import sys
+import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.append(script_dir)
+from planners.astar_planner import AStarPlanner
 
 
 
@@ -1287,7 +1027,11 @@ class SingleDroneNavigation:
         self.last_trr            = 0.0
         self.last_tracked_count  = 0
 
-        # -- A* planner setup ----------------------------------------------
+        # -- Planner setup ----------------------------------------------
+        planner_cfg = cfg.get("planner", {})
+        self.planner_type = planner_cfg.get("type", "astar")
+        self.planner_hyperparams = planner_cfg.get(self.planner_type, {})
+
         self.astar_enabled   = bool(cfg.get("astar_enabled", True))
         self.grid_resolution = float(cfg.get("grid_resolution", 2.0))
         self.grid_margin     = float(cfg.get("grid_margin", 90.0))
@@ -1526,19 +1270,28 @@ class SingleDroneNavigation:
 
     def _init_astar(self):
         """
-        Run A* once (on first NAVIGATE step) to generate the waypoint list.
+        Run global planner once (on first NAVIGATE step) to generate the waypoint list.
         Called lazily so the Webots scene is fully loaded before we query it.
         Includes startup angle sanity check (Task 2): if WP[0] is "behind" the
         drone relative to the overall mission direction, it is skipped to prevent
         the startup jitter caused by an immediate 180-degree heading reversal.
         """
-        print("\n[A*] Initialising path planner...")
-        planner = AStarPlanner(
-            buildings        = self.test_buildings,
-            resolution       = self.grid_resolution,
-            grid_margin      = self.grid_margin,
-            obstacle_inflation = self.obstacle_inflation,
-        )
+        print(f"\n[{self.planner_type.upper()}] Initialising path planner...")
+        
+        world_config = {"buildings": self.test_buildings}
+        grid_config = {
+            "resolution": self.grid_resolution,
+            "grid_margin": self.grid_margin,
+            "obstacle_inflation": self.obstacle_inflation,
+            "hyperparams": self.planner_hyperparams
+        }
+        
+        # Instantiate planner dynamically
+        if self.planner_type == "astar":
+            self.planner = AStarPlanner(world_config, grid_config)
+        else:
+            raise ValueError(f"Unknown planner type: {self.planner_type}")
+            
         start_xy = (self.start_pos[0], self.start_pos[1])
         
         # Define lawnmower sweep key waypoints covering the full 200m x 200m world along street centerlines
@@ -1556,17 +1309,17 @@ class SingleDroneNavigation:
             [self.target_pos[0], self.target_pos[1]]
         ]
 
-        print(f"[A*] Planning lawnmower sweep through checkpoints: {sweep_targets}")
+        print(f"[{self.planner_type.upper()}] Planning lawnmower sweep through checkpoints: {sweep_targets}")
         
         raw_wps = []
         current_start = start_xy
         for idx, target in enumerate(sweep_targets):
-            segment = planner.plan(current_start, target)
+            segment = self.planner.plan(current_start, target)
             if segment:
                 raw_wps.extend(segment)
                 current_start = target
             else:
-                print(f"[A*] Warning: leg to {target} failed planning  -  using straight-line fallback")
+                print(f"[{self.planner_type.upper()}] Warning: leg to {target} failed planning  -  using straight-line fallback")
                 raw_wps.append(target)
                 current_start = target
 
@@ -1629,6 +1382,13 @@ class SingleDroneNavigation:
                 print("  [CollisionSafety] All segments clear  -  no corrections needed.")
             else:
                 print(f"  [CollisionSafety] Fixed {fixed} blocked segment(s).")
+
+        # Update path length and smoothness on the final post-validation path
+        if hasattr(self, "planner") and self.planner is not None:
+            waypoints_2d = [(wp[0], wp[1]) for wp in self.waypoints]
+            complete_path_2d = [(self.start_pos[0], self.start_pos[1])] + waypoints_2d
+            self.planner.path_length_m = self.planner._compute_path_length(complete_path_2d)
+            self.planner.smoothness_score = self.planner._compute_smoothness(complete_path_2d)
 
         # Spawn visual markers if requested
         if self.show_wp_markers:
@@ -2530,6 +2290,11 @@ class SingleDroneNavigation:
         # Cumulative coverage
         cumulative_coverage = len(self.visited_grid_cells) / self.total_grid_cells * 100.0 if self.total_grid_cells else 0.0
 
+        # Extract planner stats if active
+        planner_stats = None
+        if hasattr(self, "planner") and self.planner is not None:
+            planner_stats = self.planner.get_stats()
+
         metrics = {
             "phase": "Phase 1  -  Single Drone Lawnmower Patrol & Surveillance Baseline",
             "world": "worlds/single_drone_downtown.wbt",
@@ -2551,6 +2316,11 @@ class SingleDroneNavigation:
             "mean_trr_percent": round(mean_trr, 2),
             "cumulative_coverage_percent": round(cumulative_coverage, 2),
             "total_steps": self.step_count,
+            "planner_type": self.planner_type if hasattr(self, "planner_type") else "astar",
+            "planner_compute_time_ms": round(planner_stats["compute_time_ms"], 3) if planner_stats else 0.0,
+            "planner_nodes_explored": planner_stats["nodes_explored"] if planner_stats else 0,
+            "planner_path_length_m": round(planner_stats["path_length_m"], 3) if planner_stats else 0.0,
+            "planner_smoothness_score": round(planner_stats["smoothness_score"], 3) if planner_stats else 1.0,
             "buildings": [{"name": b["name"], "x": b["x"], "y": b["y"], "r": b["r"]} for b in self.test_buildings],
             "step_log": self.step_log
         }
@@ -2590,8 +2360,17 @@ class SingleDroneNavigation:
         global_record.update(flat_metrics)
         try:
             file_exists = os.path.isfile(global_csv_path)
+            fieldnames = list(global_record.keys())
+            if file_exists:
+                # Read existing headers to avoid corrupting the CSV structure
+                with open(global_csv_path, "r", encoding="utf-8") as rf:
+                    reader = csv.reader(rf)
+                    existing_headers = next(reader, None)
+                    if existing_headers:
+                        fieldnames = existing_headers
+            
             with open(global_csv_path, "a", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=global_record.keys())
+                writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
                 if not file_exists:
                     writer.writeheader()
                 writer.writerow(global_record)
