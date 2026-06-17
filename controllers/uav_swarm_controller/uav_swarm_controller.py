@@ -32,6 +32,7 @@ if script_dir not in sys.path:
     sys.path.append(script_dir)
 from planners.astar_planner import AStarPlanner
 from planners.dijkstra_planner import DijkstraPlanner
+from planners.rrt_planner import RRTPlanner
 
 
 
@@ -1292,6 +1293,8 @@ class SingleDroneNavigation:
             self.planner = AStarPlanner(world_config, grid_config)
         elif self.planner_type == "dijkstra":
             self.planner = DijkstraPlanner(world_config, grid_config)
+        elif self.planner_type == "rrt":
+            self.planner = RRTPlanner(world_config, grid_config)
         else:
             raise ValueError(f"Unknown planner type: {self.planner_type}")
             
