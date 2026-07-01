@@ -90,7 +90,6 @@ The table below contrasts the metrics from the latest run (**Timestamp: {timesta
 | **Average Velocity (m/s)** | {latest_run["average_speed_m_s"]:.3f} | {speed_mean} | {speed_std} |
 | **Proximity Warnings** | {latest_run["proximity_events"]} | {prox_mean} | {prox_std} |
 | **Near Misses (<=4.0m)** | {latest_near_misses} | {miss_mean} | {miss_std} |
-| **Physical Geometry Contacts** | {latest_run["physics_contacts"]} | {df["physics_contacts"].mean():.2f} | ±{df["physics_contacts"].std() if len(df) > 1 else 0.0:.2f} |
 | **Cumulative Arena Coverage** | {latest_run["cumulative_coverage_percent"]:.1f}% | {cov_mean}% | {cov_std}% |
 | **A* Waypoint Replans / Fallbacks** | {latest_replans} | {replan_mean} | {replan_std} |
 | **Total Simulation Steps** | {latest_run["total_steps"]} | {steps_mean} | {steps_std} |
