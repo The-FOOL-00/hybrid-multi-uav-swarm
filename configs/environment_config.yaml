@@ -149,6 +149,17 @@ baseline_navigation:
   active_uav: 0                # only UAV_0 moves; UAV_1-4 are frozen
   start_position: [-40.0, 48.0, 15.0]   # ENU  (x, y, z)
   target_position: [50.0, 48.0, 15.0]  # ENU  (x, y, z)
+  sweep_targets:
+    - [-90.0, -80.0]
+    - [90.0, -80.0]
+    - [90.0, -40.0]
+    - [-90.0, -40.0]
+    - [-90.0, 0.0]
+    - [90.0, 0.0]
+    - [90.0, 40.0]
+    - [-90.0, 40.0]
+    - [-90.0, 80.0]
+    - [90.0, 80.0]
   cruise_speed: 0.3            # m/step — smooth visual motion (~285 steps across 85m)
   arrival_radius: 3.0          # metres — declare ARRIVED when dist < this
   altitude: 15.0               # m  — constant cruise altitude
