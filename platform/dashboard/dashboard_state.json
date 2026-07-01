@@ -1,0 +1,852 @@
+{
+    "meta": {
+        "generated_at": "2026-07-01T18:00:00",
+        "platform_version": "1.0.0",
+        "schema_version": "1.0"
+    },
+    "project": {
+        "name": "Hybrid Multi-UAV Navigation Research Platform",
+        "current_phase": 1,
+        "current_branch": "single-drone-navigation",
+        "last_updated": "2026-07-01",
+        "current_sprint": "Phase 1 \u2014 Platform Architecture",
+        "repository": "The-FOOL-00/hybrid-multi-uav-swarm",
+        "institution": "IFSP",
+        "research_readiness": 34,
+        "total_phases": 11
+    },
+    "research": {
+        "active_question_id": "Q-001",
+        "active_hypothesis_id": "H-001",
+        "questions": [
+            {
+                "id": "Q-001",
+                "text": "Does a hybrid navigation architecture that combines global path planning with reactive local avoidance outperform any single-strategy approach across path efficiency, obstacle avoidance rate, and mission success in cluttered urban environments?",
+                "status": "under_investigation",
+                "since": "2026-06-15",
+                "supporting_experiments": ["EXP-0033", "EXP-0032", "EXP-0031"]
+            },
+            {
+                "id": "Q-002",
+                "text": "Which global planning algorithm (A*, Dijkstra, RRT, Potential Field) produces the best path quality metrics when used as the global component of a hybrid navigation system?",
+                "status": "open",
+                "since": "2026-07-01",
+                "supporting_experiments": []
+            },
+            {
+                "id": "Q-003",
+                "text": "Which hybrid fusion strategy (weighted blend, distance-gated, confidence-weighted) produces the optimal trade-off between path efficiency and collision avoidance in urban environments?",
+                "status": "open",
+                "since": "2026-07-01",
+                "supporting_experiments": []
+            }
+        ],
+        "hypotheses": [
+            {
+                "id": "H-001",
+                "question_id": "Q-001",
+                "text": "A hybrid navigation architecture will produce path efficiency scores \u226510% higher than any single-strategy baseline, with p < 0.05, across n=10 trials in the downtown scenario.",
+                "status": "under_test",
+                "prediction": "hybrid_efficiency > single_strategy_efficiency by \u226510%",
+                "since": "2026-06-15",
+                "evidence_ids": []
+            },
+            {
+                "id": "H-002",
+                "question_id": "Q-002",
+                "text": "A* will produce shorter paths than RRT but longer computation time; Dijkstra will behave comparably to A* with higher node exploration counts.",
+                "status": "proposed",
+                "prediction": "path_length: PF < A* < Dijkstra < RRT; compute_time: PF < A* < Dijkstra < RRT",
+                "since": "2026-07-01",
+                "evidence_ids": []
+            }
+        ],
+        "paper_sections": [
+            {"name": "Introduction",   "progress": 15, "status_note": "Problem statement drafted"},
+            {"name": "Related Work",   "progress": 5,  "status_note": "Literature review pending"},
+            {"name": "Methodology",    "progress": 40, "status_note": "Architecture described; algorithms pending"},
+            {"name": "Experiments",    "progress": 0,  "status_note": "Awaiting Phase 3 benchmark"},
+            {"name": "Results",        "progress": 0,  "status_note": "Awaiting Phase 4 hybrid navigation"},
+            {"name": "Conclusion",     "progress": 0,  "status_note": "Awaiting results"}
+        ]
+    },
+    "roadmap": [
+        {
+            "id": 0,
+            "name": "Research Foundation",
+            "short_name": "Foundation",
+            "description": "Establish research questions, hypotheses, metric specifications, and knowledge structure before further implementation.",
+            "status": "complete",
+            "progress": 100,
+            "paper_section": "Introduction & Problem Statement",
+            "research_value": "Critical",
+            "exit_criteria": [
+                {"text": "Primary research question formally stated", "met": true},
+                {"text": "Primary hypothesis with measurable predictions defined", "met": true},
+                {"text": "Every metric formally specified with quality designation", "met": true},
+                {"text": "Engineering audit complete", "met": true}
+            ],
+            "deliverables": [
+                "research_questions.yaml",
+                "hypotheses.yaml",
+                "metric_specifications.md",
+                "Engineering Audit Report",
+                "Master Architecture Document"
+            ]
+        },
+        {
+            "id": 1,
+            "name": "Platform Architecture",
+            "short_name": "Platform",
+            "description": "Build the research platform shell: Dashboard, Experiment Manager, Configuration Manager, Metrics Engine, and Experiment Database.",
+            "status": "active",
+            "progress": 35,
+            "paper_section": "Experimental Setup",
+            "research_value": "High",
+            "exit_criteria": [
+                {"text": "Research Dashboard renders from dashboard_state.json", "met": false},
+                {"text": "DashboardWriter API allows all modules to update state", "met": false},
+                {"text": "Experiment Manager accepts YAML specs and runs experiments", "met": false},
+                {"text": "Metrics Engine collects M01\u2013M16 with quality annotations", "met": false},
+                {"text": "Experiment Database stores and indexes completed runs", "met": false},
+                {"text": "Unit tests pass without Webots installed", "met": false}
+            ],
+            "deliverables": [
+                "platform/dashboard/",
+                "platform/experiment/",
+                "platform/metrics/",
+                "platform/config/",
+                "platform/simulation/webots_adapter.py",
+                "tests/unit/"
+            ]
+        },
+        {
+            "id": 2,
+            "name": "Algorithm Layer",
+            "short_name": "Algorithms",
+            "description": "Formalize all existing algorithms into the factory pattern. Implement Potential Field planner. Refactor navigation monolith.",
+            "status": "in_progress",
+            "progress": 20,
+            "paper_section": "Navigation Architecture",
+            "research_value": "High",
+            "exit_criteria": [
+                {"text": "PlannerFactory registered with A*, Dijkstra, RRT, Potential Field", "met": false},
+                {"text": "AvoidanceFactory registered with both existing modules", "met": false},
+                {"text": "HybridCoordinator isolated with weighted_blend fusion strategy", "met": false},
+                {"text": "Navigation monolith reduced to <100-line entry point", "met": false},
+                {"text": "nodes_explored stat fixed to per-call, not cumulative", "met": false},
+                {"text": "Lawnmower sweep targets moved to YAML config", "met": false}
+            ],
+            "deliverables": [
+                "algorithms/planners/planner_factory.py",
+                "algorithms/avoidance/avoidance_factory.py",
+                "navigation/hybrid_coordinator.py",
+                "navigation/navigation_engine.py",
+                "navigation/safety_manager.py",
+                "algorithms/planners/potential_field/"
+            ]
+        },
+        {
+            "id": 3,
+            "name": "Planner Benchmark",
+            "short_name": "Benchmark",
+            "description": "First publishable result: statistically validated comparison of all four planners across all world scenarios.",
+            "status": "planned",
+            "progress": 0,
+            "paper_section": "Baseline Planner Evaluation",
+            "research_value": "Very High",
+            "exit_criteria": [
+                {"text": "200 runs completed (4 planners \u00d7 5 worlds \u00d7 10 trials)", "met": false},
+                {"text": "Statistical significance tested pairwise with p-values and effect sizes", "met": false},
+                {"text": "Publication-ready comparison table generated", "met": false},
+                {"text": "Best planner configuration identified and written to Knowledge Base", "met": false}
+            ],
+            "deliverables": [
+                "platform/benchmark/benchmark_engine.py",
+                "benchmarks/reports/BENCH-0001_planner_comparison.html",
+                "benchmarks/figures/",
+                "benchmarks/tables/BENCH-0001_summary.csv"
+            ]
+        },
+        {
+            "id": 4,
+            "name": "Hybrid Navigation",
+            "short_name": "Hybrid Nav",
+            "description": "Implement and compare multiple hybrid fusion strategies in the HybridCoordinator. Implement dynamic replanning.",
+            "status": "planned",
+            "progress": 0,
+            "paper_section": "Hybrid Navigation Evaluation",
+            "research_value": "Very High",
+            "exit_criteria": [
+                {"text": "3 fusion strategies implemented and compared", "met": false},
+                {"text": "Dynamic replanning validated (>90% stuck-state recovery)", "met": false},
+                {"text": "Best hybrid configuration outperforms best single-strategy baseline on \u22652 metrics with p<0.05", "met": false}
+            ],
+            "deliverables": [
+                "navigation/fusion_strategies/distance_gated.py",
+                "navigation/fusion_strategies/confidence_weighted.py",
+                "navigation/fusion_strategies/hierarchical_override.py",
+                "benchmarks/reports/BENCH-0002_hybrid_fusion_comparison.html"
+            ]
+        },
+        {
+            "id": 5,
+            "name": "Hybrid Optimization",
+            "short_name": "Optimization",
+            "description": "Sensitivity analysis and ablation study on the best hybrid configuration. Lock the final configuration profile.",
+            "status": "planned",
+            "progress": 0,
+            "paper_section": "Ablation Study & Parameter Analysis",
+            "research_value": "High",
+            "exit_criteria": [
+                {"text": "Sensitivity analysis completed for all key parameters", "met": false},
+                {"text": "Ablation study confirms each component adds measurable value", "met": false},
+                {"text": "Final configuration stable across 20+ runs", "met": false}
+            ],
+            "deliverables": [
+                "benchmarks/reports/BENCH-0003_ablation_study.html",
+                "benchmarks/reports/BENCH-0004_sensitivity_analysis.html",
+                "configs/profiles/final_best.yaml"
+            ]
+        },
+        {
+            "id": 6,
+            "name": "Paper Submission",
+            "short_name": "Paper",
+            "description": "Write, review, and submit the research paper on Hybrid Single-UAV Navigation.",
+            "status": "planned",
+            "progress": 10,
+            "paper_section": "All Sections",
+            "research_value": "Critical",
+            "exit_criteria": [
+                {"text": "Every numerical result traceable to an experiment ID", "met": false},
+                {"text": "All figures generated by Report Generator pipeline", "met": false},
+                {"text": "At least 2 rounds of internal review completed", "met": false},
+                {"text": "Submitted to target venue", "met": false}
+            ],
+            "deliverables": [
+                "paper/main.tex",
+                "paper/figures/",
+                "paper/tables/"
+            ]
+        },
+        {
+            "id": 7,
+            "name": "Dynamic Obstacles",
+            "short_name": "Dynamic Obs",
+            "description": "Upgrade to real Webots DistanceSensors. Add dynamic obstacle (moving pedestrian) handling.",
+            "status": "planned",
+            "progress": 0,
+            "paper_section": "Future Work",
+            "research_value": "Medium",
+            "exit_criteria": [
+                {"text": "Real DistanceSensor API replaces geometric ray-casting", "met": false},
+                {"text": "Drone navigates with 10+ moving pedestrians at <5% collision rate", "met": false}
+            ],
+            "deliverables": [
+                "algorithms/avoidance/webots_distance_sensor/",
+                "algorithms/avoidance/velocity_obstacle/",
+                "benchmarks/reports/BENCH-0005_dynamic_obstacle_comparison.html"
+            ]
+        },
+        {
+            "id": 8,
+            "name": "Multi-UAV",
+            "short_name": "Multi-UAV",
+            "description": "Unfreeze UAV_1\u20134. Implement sector-based task allocation and UAV-UAV collision avoidance.",
+            "status": "planned",
+            "progress": 0,
+            "paper_section": "Swarm Extension",
+            "research_value": "High",
+            "exit_criteria": [
+                {"text": "5 UAVs navigate simultaneously without UAV-UAV collision for 10,000 steps", "met": false},
+                {"text": "Swarm coverage exceeds single-drone coverage with statistical significance", "met": false}
+            ],
+            "deliverables": [
+                "navigation/swarm/swarm_coordinator.py",
+                "benchmarks/reports/BENCH-0006_multi_uav_baseline.html"
+            ]
+        },
+        {
+            "id": 9,
+            "name": "Swarm Intelligence",
+            "short_name": "Swarm",
+            "description": "Dynamic sector reassignment, density-based coverage, emergent coordination strategies.",
+            "status": "planned",
+            "progress": 0,
+            "paper_section": "Swarm Coordination",
+            "research_value": "High",
+            "exit_criteria": [
+                {"text": "Dynamic task reallocation validated across 3 coordination strategies", "met": false}
+            ],
+            "deliverables": [
+                "benchmarks/reports/BENCH-0007_swarm_coordination_comparison.html"
+            ]
+        },
+        {
+            "id": 10,
+            "name": "RL Optimization",
+            "short_name": "RL",
+            "description": "Replace the hand-coded HybridCoordinator fusion strategy with a learned RL policy.",
+            "status": "planned",
+            "progress": 0,
+            "paper_section": "RL Extension",
+            "research_value": "Very High",
+            "exit_criteria": [
+                {"text": "RL fusion achieves statistically significant improvement over best hand-coded fusion on \u22652 primary metrics", "met": false}
+            ],
+            "deliverables": [
+                "rl/algorithms/ppo/ppo_agent.py",
+                "rl/training/trainer.py (activated)"
+            ]
+        }
+    ],
+    "modules": [
+        {
+            "id": "webots_adapter",
+            "name": "Webots Simulation",
+            "description": "Webots R2025a simulation environment with 6 urban worlds, DJI Mavic 2 Pro model, crowd and bird agents.",
+            "status": "implemented",
+            "progress": 90,
+            "owner": "Platform Team",
+            "file_path": "controllers/uav_swarm_controller/",
+            "notes": "6 worlds available. resetPhysics() workaround in place.",
+            "phase_introduced": 0
+        },
+        {
+            "id": "planner_factory",
+            "name": "Planner Factory",
+            "description": "Runtime registry for all path planning algorithms. Instantiates planners by name from YAML config.",
+            "status": "in_progress",
+            "progress": 40,
+            "owner": "Planner Team",
+            "file_path": "controllers/uav_swarm_controller/planners/",
+            "notes": "A*, Dijkstra, RRT exist but not yet in factory pattern. Potential Field missing.",
+            "phase_introduced": 2
+        },
+        {
+            "id": "avoidance_factory",
+            "name": "Avoidance Factory",
+            "description": "Runtime registry for collision avoidance modules. Two-tier architecture: primary (8-ray) + emergency safety layer.",
+            "status": "in_progress",
+            "progress": 30,
+            "owner": "Avoidance Team",
+            "file_path": "controllers/uav_swarm_controller/uav_swarm_controller.py",
+            "notes": "Both avoidance modules exist but embedded in monolith. Factory not yet created.",
+            "phase_introduced": 2
+        },
+        {
+            "id": "hybrid_coordinator",
+            "name": "Hybrid Coordinator",
+            "description": "Fuses global planning direction with reactive avoidance vectors. Core research contribution module.",
+            "status": "in_progress",
+            "progress": 20,
+            "owner": "Navigation Team",
+            "file_path": "controllers/uav_swarm_controller/uav_swarm_controller.py",
+            "notes": "Weighted blend fusion exists inline. Not yet isolated as a pluggable module.",
+            "phase_introduced": 2
+        },
+        {
+            "id": "navigation_engine",
+            "name": "Navigation Engine",
+            "description": "Mission state machine (GROUND_IDLE\u2192ASCEND\u2192NAVIGATE\u2192ARRIVED). Kinematic flight model.",
+            "status": "implemented",
+            "progress": 85,
+            "owner": "Navigation Team",
+            "file_path": "controllers/uav_swarm_controller/uav_swarm_controller.py",
+            "notes": "Functional but embedded in 3157-line monolith. Needs extraction in Phase 2.",
+            "phase_introduced": 1
+        },
+        {
+            "id": "safety_manager",
+            "name": "Safety Manager",
+            "description": "Hard constraint enforcement: geofence, altitude bounds, emergency stops. Independent of algorithm stack.",
+            "status": "in_progress",
+            "progress": 50,
+            "owner": "Navigation Team",
+            "file_path": "controllers/uav_swarm_controller/uav_swarm_controller.py",
+            "notes": "CollisionSafetyLayer exists inline. Not yet a standalone module with hard override authority.",
+            "phase_introduced": 1
+        },
+        {
+            "id": "metrics_engine",
+            "name": "Metrics Engine",
+            "description": "Ground-truth metric collection (M01\u2013M16) with quality designations. Validates measurement anomalies.",
+            "status": "in_progress",
+            "progress": 40,
+            "owner": "Benchmark Team",
+            "file_path": "controllers/uav_swarm_controller/uav_swarm_controller.py",
+            "notes": "Metrics collected per-run. physics_contacts always 0 (known issue). nodes_explored cumulative (bug). TRR is proxy.",
+            "phase_introduced": 1
+        },
+        {
+            "id": "experiment_manager",
+            "name": "Experiment Manager",
+            "description": "Orchestrates all experiments. Assigns IDs, locks configs, monitors runs, triggers benchmark engine.",
+            "status": "planned",
+            "progress": 0,
+            "owner": "Platform Team",
+            "file_path": "platform/experiment/",
+            "notes": "Not yet implemented. Phase 1 deliverable.",
+            "phase_introduced": 1
+        },
+        {
+            "id": "benchmark_engine",
+            "name": "Benchmark Engine",
+            "description": "Statistical analysis pipeline: computes CI, p-values, effect sizes, Pareto ranking, and publication figures.",
+            "status": "planned",
+            "progress": 5,
+            "owner": "Benchmark Team",
+            "file_path": "platform/benchmark/",
+            "notes": "BenchmarkLogger exists for RL. Full benchmark engine not yet built.",
+            "phase_introduced": 3
+        },
+        {
+            "id": "dashboard",
+            "name": "Research Dashboard",
+            "description": "Entry point for all project participants. Reads dashboard_state.json and renders a self-contained HTML report.",
+            "status": "in_progress",
+            "progress": 60,
+            "owner": "Platform Team",
+            "file_path": "platform/dashboard/",
+            "notes": "Phase 1 primary deliverable. Currently being implemented.",
+            "phase_introduced": 1
+        },
+        {
+            "id": "report_generator",
+            "name": "Report Generator",
+            "description": "Converts benchmark outputs to HTML, PDF, and LaTeX for internal review and paper submission.",
+            "status": "planned",
+            "progress": 0,
+            "owner": "Research Team",
+            "file_path": "platform/reporting/",
+            "notes": "Not yet implemented. Phase 3 deliverable.",
+            "phase_introduced": 3
+        },
+        {
+            "id": "swarm_coordinator",
+            "name": "Swarm Coordinator",
+            "description": "Multi-agent mission orchestrator: sector assignment, inter-UAV coordination, leader election.",
+            "status": "planned",
+            "progress": 0,
+            "owner": "Navigation Team",
+            "file_path": "navigation/swarm/",
+            "notes": "Phase 8 deliverable. Extension slot exists in architecture.",
+            "phase_introduced": 8
+        },
+        {
+            "id": "rl_engine",
+            "name": "RL Optimization Engine",
+            "description": "Replaces hand-coded HybridCoordinator fusion with a learned PPO policy.",
+            "status": "planned",
+            "progress": 15,
+            "owner": "Research Team",
+            "file_path": "rl/",
+            "notes": "Infrastructure exists (gym wrapper, reward functions, SB3 trainer). Frozen until Phase 4 complete.",
+            "phase_introduced": 10
+        }
+    ],
+    "algorithms": [
+        {
+            "id": "astar",
+            "name": "A* (Grid 8-connected)",
+            "category": "planner",
+            "status": "registered",
+            "file_path": "controllers/uav_swarm_controller/planners/astar_planner.py",
+            "last_validated": "2026-07-01",
+            "best_metric": "Path length: ~1371m (downtown)",
+            "notes": "Euclidean or Manhattan heuristic. LOS post-smoothing. Grid: 2m/cell."
+        },
+        {
+            "id": "dijkstra",
+            "name": "Dijkstra (Zero Heuristic)",
+            "category": "planner",
+            "status": "registered",
+            "file_path": "controllers/uav_swarm_controller/planners/dijkstra_planner.py",
+            "last_validated": "2026-07-01",
+            "best_metric": "Compute: ~18.7ms (downtown)",
+            "notes": "A* variant with h=0. Explores more nodes but guarantees optimal."
+        },
+        {
+            "id": "rrt_bidirectional",
+            "name": "RRT (Bidirectional)",
+            "category": "planner",
+            "status": "registered",
+            "file_path": "controllers/uav_swarm_controller/planners/rrt_planner.py",
+            "last_validated": "2026-07-01",
+            "best_metric": "Smoothness: ~0.92 (downtown)",
+            "notes": "Continuous-space sampling. Higher compute, smoother paths."
+        },
+        {
+            "id": "potential_field",
+            "name": "Potential Field",
+            "category": "planner",
+            "status": "missing",
+            "file_path": "algorithms/planners/potential_field/",
+            "last_validated": "",
+            "best_metric": "",
+            "notes": "Config entry exists; implementation missing. Priority: Phase 2."
+        },
+        {
+            "id": "local_sensor_geometric",
+            "name": "8-Ray Geometric Sensor",
+            "category": "avoidance",
+            "status": "registered",
+            "file_path": "controllers/uav_swarm_controller/uav_swarm_controller.py",
+            "last_validated": "2026-07-01",
+            "best_metric": "Near-misses: ~8 (downtown)",
+            "notes": "Geometric ray-casting (not real Webots sensors). 14m range, power-law falloff."
+        },
+        {
+            "id": "safety_layer_repulsion",
+            "name": "Safety Layer Repulsion",
+            "category": "avoidance",
+            "status": "registered",
+            "file_path": "controllers/uav_swarm_controller/uav_swarm_controller.py",
+            "last_validated": "2026-07-01",
+            "best_metric": "",
+            "notes": "Emergency fail-safe. Fires only in WARNING/EMERGENCY state. Surface-distance based."
+        },
+        {
+            "id": "velocity_obstacle",
+            "name": "Velocity Obstacle (VO)",
+            "category": "avoidance",
+            "status": "planned",
+            "file_path": "algorithms/avoidance/velocity_obstacle/",
+            "last_validated": "",
+            "best_metric": "",
+            "notes": "Phase 7 deliverable. Required for dynamic obstacle and multi-UAV avoidance."
+        },
+        {
+            "id": "weighted_blend",
+            "name": "Weighted Blend Fusion",
+            "category": "hybrid",
+            "status": "in_progress",
+            "file_path": "controllers/uav_swarm_controller/uav_swarm_controller.py",
+            "last_validated": "2026-07-01",
+            "best_metric": "Path efficiency: 0.882",
+            "notes": "Fixed weights: astar=0.65, avoidance=0.35. Currently inline in controller."
+        },
+        {
+            "id": "distance_gated",
+            "name": "Distance-Gated Fusion",
+            "category": "hybrid",
+            "status": "planned",
+            "file_path": "navigation/fusion_strategies/distance_gated.py",
+            "last_validated": "",
+            "best_metric": "",
+            "notes": "Phase 4 deliverable. Blend weight determined by obstacle proximity."
+        },
+        {
+            "id": "confidence_weighted",
+            "name": "Confidence-Weighted Fusion",
+            "category": "hybrid",
+            "status": "planned",
+            "file_path": "navigation/fusion_strategies/confidence_weighted.py",
+            "last_validated": "",
+            "best_metric": "",
+            "notes": "Phase 4 deliverable. Avoidance authority scales with threat level."
+        },
+        {
+            "id": "rl_fusion",
+            "name": "RL Learned Fusion",
+            "category": "hybrid",
+            "status": "planned",
+            "file_path": "rl/",
+            "last_validated": "",
+            "best_metric": "",
+            "notes": "Phase 10 deliverable. PPO policy replaces hand-coded fusion function."
+        }
+    ],
+    "environments": [
+        {
+            "id": "downtown",
+            "name": "Downtown",
+            "world_file": "worlds/single_drone_downtown.wbt",
+            "status": "active",
+            "crowd_count": 15,
+            "uav_altitude_m": 15.0,
+            "area_m2": 40000,
+            "description": "Dense urban canyon with commercial buildings. Primary development and benchmark world.",
+            "last_used": "2026-07-01"
+        },
+        {
+            "id": "residential",
+            "name": "Residential",
+            "world_file": "worlds/residential.wbt",
+            "status": "available",
+            "crowd_count": 8,
+            "uav_altitude_m": 10.0,
+            "area_m2": 25600,
+            "description": "Low-density residential area. Fewer obstacles, higher crowd dispersion.",
+            "last_used": ""
+        },
+        {
+            "id": "industrial",
+            "name": "Industrial",
+            "world_file": "worlds/industrial.wbt",
+            "status": "available",
+            "crowd_count": 10,
+            "uav_altitude_m": 12.0,
+            "area_m2": 32400,
+            "description": "Industrial zone with large structures and limited open corridors.",
+            "last_used": ""
+        },
+        {
+            "id": "mixed",
+            "name": "Mixed",
+            "world_file": "worlds/mixed.wbt",
+            "status": "available",
+            "crowd_count": 35,
+            "uav_altitude_m": 15.0,
+            "area_m2": 32400,
+            "description": "Combined residential and commercial. Highest crowd density scenario.",
+            "last_used": ""
+        },
+        {
+            "id": "event",
+            "name": "Event",
+            "world_file": "worlds/event.wbt",
+            "status": "available",
+            "crowd_count": 40,
+            "uav_altitude_m": 12.0,
+            "area_m2": 25600,
+            "description": "Crowded event area. Maximum crowd density. Stress test for TRR metric.",
+            "last_used": ""
+        }
+    ],
+    "recent_experiments": [
+        {
+            "id": "EXP-0033",
+            "name": "A* Hybrid Baseline \u2014 Downtown",
+            "config_profile": "hybrid_astar_geometric",
+            "world": "downtown",
+            "n_trials": 1,
+            "status": "pass",
+            "timestamp": "2026-07-01T22:15:51",
+            "metrics": {
+                "path_length_m": 1371.039,
+                "travel_time_s": 44.232,
+                "near_misses": 8,
+                "mean_trr_percent": 1.48,
+                "coverage_percent": 25.0,
+                "path_efficiency": 0.882
+            },
+            "notes": "Latest measured run. Near-misses reduced vs prior runs.",
+            "research_question_id": "Q-001"
+        },
+        {
+            "id": "EXP-0032",
+            "name": "RRT Hybrid Baseline \u2014 Downtown",
+            "config_profile": "hybrid_rrt_geometric",
+            "world": "downtown",
+            "n_trials": 1,
+            "status": "pass",
+            "timestamp": "2026-06-30T19:21:00",
+            "metrics": {
+                "path_length_m": 1589.2,
+                "travel_time_s": 51.2,
+                "near_misses": 12,
+                "mean_trr_percent": 1.21,
+                "coverage_percent": 24.5,
+                "path_efficiency": 0.811
+            },
+            "notes": "RRT baseline for comparison. Longer path, more near-misses.",
+            "research_question_id": "Q-001"
+        },
+        {
+            "id": "EXP-0031",
+            "name": "Dijkstra Baseline \u2014 Downtown",
+            "config_profile": "baseline_dijkstra",
+            "world": "downtown",
+            "n_trials": 1,
+            "status": "pass",
+            "timestamp": "2026-06-29T18:00:00",
+            "metrics": {
+                "path_length_m": 1402.1,
+                "travel_time_s": 46.8,
+                "near_misses": 11,
+                "mean_trr_percent": 1.31,
+                "coverage_percent": 24.5,
+                "path_efficiency": 0.864
+            },
+            "notes": "Dijkstra comparison baseline.",
+            "research_question_id": "Q-002"
+        }
+    ],
+    "best_configuration": {
+        "config_profile": "hybrid_astar_geometric v1.3.0",
+        "experiment_id": "EXP-0033",
+        "path_efficiency": 0.882,
+        "near_misses": 8,
+        "mean_trr_percent": 1.48,
+        "mean_coverage_percent": 25.0,
+        "confidence": "Low (n=1 \u2014 needs n\u22655)",
+        "last_validated": "2026-07-01",
+        "notes": "Best single measured run. Not statistically validated. Requires n\u22655 trials for benchmark qualification."
+    },
+    "knowledge_base": [
+        {
+            "id": "KB-001",
+            "title": "Master Architecture Document",
+            "category": "architecture",
+            "description": "Complete 11-phase system design, module specifications, folder structure, and research workflow.",
+            "file_path": "C:/Users/Welcome/.gemini/antigravity-ide/brain/37e1ed02-602c-4c1b-b8da-0ceb82178c12/master_architecture.md",
+            "url": "",
+            "date_added": "2026-07-01",
+            "tags": ["architecture", "CTO", "roadmap"]
+        },
+        {
+            "id": "KB-002",
+            "title": "Engineering Audit Report",
+            "category": "audit",
+            "description": "Full technical audit of the repository as of 2026-07-01. Covers module status, technical debt, research readiness score.",
+            "file_path": "C:/Users/Welcome/.gemini/antigravity-ide/brain/37e1ed02-602c-4c1b-b8da-0ceb82178c12/engineering_audit.md",
+            "url": "",
+            "date_added": "2026-07-01",
+            "tags": ["audit", "status", "technical-debt"]
+        },
+        {
+            "id": "KB-003",
+            "title": "Research Question Q-001",
+            "category": "research_question",
+            "description": "Does hybrid navigation outperform single-strategy? Primary research question driving the paper.",
+            "file_path": "",
+            "url": "",
+            "date_added": "2026-06-15",
+            "tags": ["research", "primary", "hypothesis"]
+        },
+        {
+            "id": "KB-004",
+            "title": "ADR-001: Factory Pattern for All Algorithms",
+            "category": "decision",
+            "description": "All planners and avoidance modules accessed exclusively through factory classes. Rationale: enables algorithm swapping without modifying navigation core.",
+            "file_path": "docs/decisions/",
+            "url": "",
+            "date_added": "2026-07-01",
+            "tags": ["ADR", "architecture", "factory"]
+        },
+        {
+            "id": "KB-005",
+            "title": "ADR-002: Metrics Quality Designation",
+            "category": "decision",
+            "description": "Every metric classified as ground_truth, proxy_model, or approximation. TRR and Coverage are proxy_model.",
+            "file_path": "docs/decisions/",
+            "url": "",
+            "date_added": "2026-07-01",
+            "tags": ["ADR", "metrics", "ground-truth"]
+        },
+        {
+            "id": "KB-006",
+            "title": "Metric Specifications (M01\u2013M16)",
+            "category": "architecture",
+            "description": "Formal specification for all 16 metrics: computation method, quality designation, known error sources.",
+            "file_path": "docs/metric_specifications.md",
+            "url": "",
+            "date_added": "2026-07-01",
+            "tags": ["metrics", "specification", "ground-truth"]
+        }
+    ],
+    "next_tasks": [
+        {
+            "id": "T-001",
+            "text": "Fix README.md: remove claims that path planning and collision avoidance are missing (both exist)",
+            "priority": "critical",
+            "phase": 0,
+            "owner": "Research Lead",
+            "estimated_hours": 2.0,
+            "depends_on": [],
+            "done": false
+        },
+        {
+            "id": "T-002",
+            "text": "Fix nodes_explored stat: reset per plan() call, not cumulative across all segments",
+            "priority": "critical",
+            "phase": 2,
+            "owner": "Planner Team",
+            "estimated_hours": 2.0,
+            "depends_on": [],
+            "done": false
+        },
+        {
+            "id": "T-003",
+            "text": "Move lawnmower sweep targets from _init_astar() hardcode into environment_config.yaml",
+            "priority": "high",
+            "phase": 2,
+            "owner": "Planner Team",
+            "estimated_hours": 2.0,
+            "depends_on": [],
+            "done": false
+        },
+        {
+            "id": "T-004",
+            "text": "Implement Potential Field planner following PlannerInterface contract",
+            "priority": "high",
+            "phase": 2,
+            "owner": "Planner Team",
+            "estimated_hours": 10.0,
+            "depends_on": ["T-002"],
+            "done": false
+        },
+        {
+            "id": "T-005",
+            "text": "Clean baseline_runs.csv: remove duplicate backfilled rows, keep only measured rows 33\u201340",
+            "priority": "high",
+            "phase": 1,
+            "owner": "Benchmark Team",
+            "estimated_hours": 2.0,
+            "depends_on": [],
+            "done": false
+        },
+        {
+            "id": "T-006",
+            "text": "Update requirements.txt: add gymnasium, stable-baselines3, torch, matplotlib",
+            "priority": "medium",
+            "phase": 1,
+            "owner": "Platform Team",
+            "estimated_hours": 1.0,
+            "depends_on": [],
+            "done": false
+        },
+        {
+            "id": "T-007",
+            "text": "Design and implement Experiment Manager (YAML spec \u2192 run lifecycle \u2192 database write)",
+            "priority": "high",
+            "phase": 1,
+            "owner": "Platform Team",
+            "estimated_hours": 16.0,
+            "depends_on": ["T-005"],
+            "done": false
+        },
+        {
+            "id": "T-008",
+            "text": "Design and implement automated planner benchmark harness (4 planners x 5 worlds x 10 trials)",
+            "priority": "high",
+            "phase": 3,
+            "owner": "Benchmark Team",
+            "estimated_hours": 14.0,
+            "depends_on": ["T-004", "T-007"],
+            "done": false
+        },
+        {
+            "id": "T-009",
+            "text": "Write Phase 3 experiment specification YAML files in experiments/queue/",
+            "priority": "medium",
+            "phase": 3,
+            "owner": "Benchmark Team",
+            "estimated_hours": 3.0,
+            "depends_on": ["T-007"],
+            "done": false
+        },
+        {
+            "id": "T-010",
+            "text": "Create docs/metric_specifications.md with formal spec for M01\u2013M16",
+            "priority": "medium",
+            "phase": 1,
+            "owner": "Research Lead",
+            "estimated_hours": 4.0,
+            "depends_on": [],
+            "done": false
+        }
+    ]
+}

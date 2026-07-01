@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hybrid Multi-UAV Navigation Research Platform — Research Dashboard</title>
+  <meta name="description" content="Research Platform Dashboard for Hybrid Multi-UAV Navigation Research Platform" />
+  <style>
+/* ─── Reset & base ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #080d1a;
+  --bg2:         #0e1629;
+  --bg3:         #131f38;
+  --glass:       rgba(14, 22, 41, 0.85);
+  --glass2:      rgba(20, 32, 60, 0.6);
+  --border:      rgba(0, 212, 255, 0.12);
+  --border2:     rgba(0, 212, 255, 0.06);
+  --cyan:        #00d4ff;
+  --purple:      #7c3aed;
+  --green:       #10b981;
+  --amber:       #f59e0b;
+  --red:         #ef4444;
+  --violet:      #a78bfa;
+  --text:        #e2e8f0;
+  --text-muted:  #64748b;
+  --text-dim:    #94a3b8;
+  --font:        system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono:        'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  --radius:      12px;
+  --radius-sm:   8px;
+  --shadow:      0 4px 24px rgba(0,0,0,0.4);
+  --shadow-lg:   0 8px 48px rgba(0,0,0,0.6);
+  --glow-cyan:   0 0 20px rgba(0, 212, 255, 0.15);
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ─── Scrollbars ──────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.3); border-radius: 3px; }
+
+/* ─── Header ──────────────────────────────────────────────────────── */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px;
+  background: linear-gradient(135deg, rgba(0,212,255,0.05), rgba(124,58,237,0.05));
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header-brand { display: flex; align-items: center; gap: 16px; }
+.header-icon { font-size: 36px; filter: drop-shadow(0 0 8px rgba(0,212,255,0.5)); }
+.header-title {
+  font-size: 20px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #fff 30%, var(--cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.3px;
+}
+.header-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.meta-chip {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 10px;
+}
+.branch-chip { color: var(--cyan); border-color: rgba(0,212,255,0.25); }
+
+/* Readiness ring */
+.header-readiness { flex-shrink: 0; }
+.readiness-ring { position: relative; width: 80px; height: 80px; }
+.readiness-svg { width: 80px; height: 80px; transform: rotate(-90deg); }
+.ring-bg  { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 6; }
+.ring-fill { fill: none; stroke-width: 6; stroke-linecap: round; transition: stroke-dasharray 0.6s; }
+.readiness-inner {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.readiness-value { font-size: 18px; font-weight: 700; }
+.readiness-label { font-size: 9px; color: var(--text-muted); margin-top: 1px; }
+
+/* ─── Main layout ─────────────────────────────────────────────────── */
+.dashboard-main {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ─── KPI strip ───────────────────────────────────────────────────── */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.kpi-card {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-align: center;
+  backdrop-filter: blur(16px);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--glow-cyan); }
+.kpi-icon  { font-size: 24px; margin-bottom: 8px; }
+.kpi-value { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.kpi-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* ─── Cards ───────────────────────────────────────────────────────── */
+.card {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border2);
+}
+.card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+.card-subtitle { font-size: 11px; color: var(--text-muted); }
+
+/* ─── Two-column layout ───────────────────────────────────────────── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+/* ─── Research card ───────────────────────────────────────────────── */
+.research-card { border-color: rgba(0, 212, 255, 0.2); }
+.research-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.research-question-block,
+.research-hypothesis-block { padding: 20px; }
+.research-hypothesis-block { border-left: 1px solid var(--border2); }
+.research-block-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 10px; }
+.research-q-id { font-family: var(--mono); font-size: 11px; color: var(--cyan); margin-bottom: 8px; }
+.research-q-text { font-size: 14px; font-style: italic; color: var(--text); line-height: 1.6; margin-bottom: 12px; }
+.research-q-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.meta-since { font-size: 11px; color: var(--text-muted); }
+.hyp-id { font-family: var(--mono); font-size: 11px; color: var(--violet); margin-bottom: 8px; }
+.hyp-text { font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 8px; }
+.hyp-prediction { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.hyp-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.status-badge {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+  border: 1px solid; border-radius: 20px; padding: 2px 10px;
+}
+.exp-chips { display: flex; gap: 6px; }
+.exp-chip { font-family: var(--mono); font-size: 10px; color: var(--cyan); background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.15); border-radius: 4px; padding: 2px 6px; }
+
+/* ─── Roadmap ─────────────────────────────────────────────────────── */
+.roadmap-scroll { overflow-x: auto; padding: 20px; }
+.roadmap-track { display: flex; gap: 12px; min-width: max-content; }
+.phase-card {
+  width: 140px;
+  flex-shrink: 0;
+  background: var(--glass2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  cursor: default;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+.phase-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+.phase-current { border-color: rgba(0,212,255,0.35) !important; box-shadow: var(--glow-cyan); }
+.phase-complete { background: rgba(16, 185, 129, 0.06); }
+.phase-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.phase-num {
+  width: 28px; height: 28px;
+  border: 2px solid;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+.phase-status-dot { font-size: 14px; }
+.phase-name { font-size: 12px; font-weight: 600; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phase-status-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+.phase-progress-bar-wrap { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-bottom: 4px; overflow: hidden; }
+.phase-progress-bar { height: 100%; border-radius: 2px; transition: width 0.5s; }
+.phase-prog-text { font-size: 10px; color: var(--text-muted); text-align: right; }
+.phase-criteria { font-size: 10px; color: var(--green); margin-top: 5px; }
+.phase-rv { font-size: 10px; margin-top: 4px; }
+
+/* ─── Modules ─────────────────────────────────────────────────────── */
+.modules-list { padding: 8px 0; max-height: 480px; overflow-y: auto; }
+.module-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; border-bottom: 1px solid var(--border2);
+  gap: 12px;
+}
+.module-row:last-child { border-bottom: none; }
+.module-row:hover { background: rgba(255,255,255,0.02); }
+.module-info { flex: 1; min-width: 0; }
+.module-name { font-size: 13px; font-weight: 600; }
+.module-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.module-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.module-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; border: 1px solid; border-radius: 20px; padding: 2px 8px; white-space: nowrap; }
+.module-prog-bar-wrap { width: 60px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+.module-prog-bar { height: 100%; border-radius: 2px; }
+
+/* ─── Algorithms ──────────────────────────────────────────────────── */
+.algorithms-container { padding: 8px 0; }
+.alg-category { margin-bottom: 4px; }
+.alg-cat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); padding: 8px 20px 4px; }
+.alg-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 20px; border-bottom: 1px solid var(--border2);
+}
+.alg-row:hover { background: rgba(255,255,255,0.02); }
+.alg-info { flex: 1; min-width: 0; }
+.alg-name { font-size: 12px; font-weight: 500; }
+.alg-metric { font-size: 10px; color: var(--text-muted); display: block; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alg-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; border: 1px solid; border-radius: 20px; padding: 2px 8px; flex-shrink: 0; }
+
+/* ─── Environments ────────────────────────────────────────────────── */
+.environments-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; padding: 16px; }
+.env-card { background: var(--glass2); border: 1px solid; border-radius: var(--radius-sm); padding: 14px; transition: transform 0.2s; }
+.env-card:hover { transform: translateY(-2px); }
+.env-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.env-name { font-size: 13px; font-weight: 600; }
+.env-badge { font-size: 10px; font-weight: 600; }
+.env-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; line-height: 1.4; }
+.env-stats { display: flex; gap: 8px; font-size: 11px; color: var(--text-dim); }
+.env-last { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+
+/* ─── Best config ─────────────────────────────────────────────────── */
+.best-config { padding: 20px; }
+.config-profile { font-size: 16px; font-weight: 700; color: var(--amber); margin-bottom: 4px; }
+.config-exp { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-bottom: 16px; }
+.config-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 12px; }
+.config-metric { text-align: center; background: var(--glass2); border-radius: var(--radius-sm); padding: 10px; }
+.config-metric-val { font-size: 20px; font-weight: 700; }
+.config-metric-label { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.config-confidence { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.config-note { font-size: 11px; color: var(--text-muted); }
+
+/* ─── Paper progress ──────────────────────────────────────────────── */
+.paper-card .card-header { }
+.paper-overall { font-size: 20px; font-weight: 700; }
+.paper-sections { padding: 8px 0; }
+.paper-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 40px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border2);
+}
+.paper-row:last-child { border-bottom: none; }
+.paper-section-name { font-size: 13px; font-weight: 500; }
+.paper-bar-wrap { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+.paper-bar { height: 100%; border-radius: 3px; transition: width 0.5s; }
+.paper-pct { font-size: 13px; font-weight: 600; text-align: right; }
+.paper-note { font-size: 11px; color: var(--text-muted); }
+
+/* ─── Experiments table ───────────────────────────────────────────── */
+.table-scroll { overflow-x: auto; }
+.experiments-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.experiments-table th {
+  text-align: left;
+  padding: 10px 16px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.experiments-table td { padding: 10px 16px; border-bottom: 1px solid var(--border2); vertical-align: middle; }
+.exp-row:hover { background: rgba(255,255,255,0.02); }
+.exp-row:last-child td { border-bottom: none; }
+.exp-id { font-family: var(--mono); font-size: 11px; color: var(--cyan); }
+.exp-name { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.exp-status { white-space: nowrap; }
+.exp-metric { text-align: right; font-family: var(--mono); }
+.exp-ts { color: var(--text-muted); white-space: nowrap; }
+
+/* ─── Knowledge base ──────────────────────────────────────────────── */
+.kb-list { padding: 8px 0; }
+.kb-item { display: flex; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border2); }
+.kb-item:last-child { border-bottom: none; }
+.kb-item:hover { background: rgba(255,255,255,0.02); }
+.kb-icon { font-size: 20px; flex-shrink: 0; padding-top: 2px; }
+.kb-content { flex: 1; min-width: 0; }
+.kb-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.kb-link { font-size: 11px; color: var(--cyan); text-decoration: none; margin-left: 6px; }
+.kb-link:hover { text-decoration: underline; }
+.kb-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.4; }
+.kb-footer { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.kb-tag { font-size: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; color: var(--text-dim); }
+.kb-date { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+
+/* ─── Tasks ───────────────────────────────────────────────────────── */
+.tasks-list { padding: 8px 0; max-height: 480px; overflow-y: auto; }
+.task-item { display: flex; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border2); }
+.task-item:last-child { border-bottom: none; }
+.task-item:hover { background: rgba(255,255,255,0.02); }
+.task-check { font-size: 16px; color: var(--text-muted); flex-shrink: 0; padding-top: 1px; }
+.task-content { flex: 1; }
+.task-text { font-size: 13px; line-height: 1.4; margin-bottom: 6px; }
+.task-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.task-priority { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; border: 1px solid; border-radius: 20px; padding: 1px 7px; }
+.task-phase,
+.task-owner,
+.task-hours,
+.task-deps { font-size: 10px; color: var(--text-muted); }
+
+/* ─── Shared utilities ────────────────────────────────────────────── */
+.no-data { padding: 32px 20px; color: var(--text-muted); text-align: center; font-size: 13px; }
+
+/* ─── Footer ──────────────────────────────────────────────────────── */
+.dashboard-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 28px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(0,0,0,0.3);
+}
+
+/* ─── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .two-col { grid-template-columns: 1fr; }
+  .research-two-col { grid-template-columns: 1fr; }
+  .research-hypothesis-block { border-left: none; border-top: 1px solid var(--border2); }
+  .paper-row { grid-template-columns: 110px 1fr 36px; }
+  .paper-row .paper-note { display: none; }
+}
+
+@media (max-width: 640px) {
+  .dashboard-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .kpi-value { font-size: 22px; }
+  .header-readiness { display: none; }
+  .config-metrics { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<header class="dashboard-header">
+  <div class="header-brand">
+    <div class="header-icon">🚁</div>
+    <div class="header-text">
+      <h1 class="header-title">Hybrid Multi-UAV Navigation Research Platform</h1>
+      <div class="header-meta">
+        <span class="meta-chip branch-chip">⎇ single-drone-navigation</span>
+        <span class="meta-chip">📍 Phase 1 of 11</span>
+        <span class="meta-chip">🏃 Phase 1 — Platform Architecture</span>
+        <span class="meta-chip">🕐 Updated 2026-07-02 00:09</span>
+      </div>
+    </div>
+  </div>
+  <div class="header-readiness">
+    <div class="readiness-ring">
+      <svg viewBox="0 0 80 80" class="readiness-svg">
+        <circle cx="40" cy="40" r="34" class="ring-bg"/>
+        <circle cx="40" cy="40" r="34" class="ring-fill"
+          style="stroke-dasharray: 72 213.6; stroke: #f59e0b"/>
+      </svg>
+      <div class="readiness-inner">
+        <div class="readiness-value">34%</div>
+        <div class="readiness-label">Readiness</div>
+      </div>
+    </div>
+  </div>
+</header>
+<main class="dashboard-main">
+<div class="kpi-strip">
+    <div class="kpi-card">
+      <div class="kpi-icon" style="color:#10b981">🎯</div>
+      <div class="kpi-value" style="color:#10b981">1/11</div>
+      <div class="kpi-label">Phases Complete</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="color:#00d4ff">❓</div>
+      <div class="kpi-value" style="color:#00d4ff">3</div>
+      <div class="kpi-label">Open Questions</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="color:#a78bfa">🔬</div>
+      <div class="kpi-value" style="color:#a78bfa">1</div>
+      <div class="kpi-label">Active Hypotheses</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="color:#f59e0b">📄</div>
+      <div class="kpi-value" style="color:#f59e0b">10%</div>
+      <div class="kpi-label">Paper Progress</div>
+    </div></div>
+
+<section class="card research-card">
+  <div class="card-header">
+    <h2 class="card-title">🔬 Active Research</h2>
+  </div>
+  <div class="research-two-col">
+    <div class="research-question-block">
+      <div class="research-block-label">Research Question</div>
+      
+      <div class="research-q-id">Q-001</div>
+      <div class="research-q-text">"Does a hybrid navigation architecture that combines global path planning with reactive local avoidance outperform any single-strategy approach across path efficiency, obstacle avoidance rate, and mission success in cluttered urban environments?"</div>
+      <div class="research-q-meta">
+        <span class="status-badge" style="color:#00d4ff;border-color:#00d4ff">Under Investigation</span>
+        <span class="meta-since">Since 2026-06-15</span>
+        <div class="exp-chips"><span class="exp-chip">EXP-0033</span><span class="exp-chip">EXP-0032</span><span class="exp-chip">EXP-0031</span></div>
+      </div>
+    </div>
+    <div class="research-hypothesis-block">
+      <div class="research-block-label">Current Hypothesis</div>
+      
+      <div class="hyp-id">H-001</div>
+      <div class="hyp-text">A hybrid navigation architecture will produce path efficiency scores ≥10% higher than any single-strategy baseline, with p &lt; 0.05, across n=10 trials in the downtown scenario.</div>
+      <div class="hyp-prediction"><strong>Prediction:</strong> hybrid_efficiency &gt; single_strategy_efficiency by ≥10%</div>
+      <div class="hyp-meta">
+        <span class="status-badge" style="color:#f59e0b;border-color:#f59e0b">Under Test</span>
+        <span class="meta-since">Since 2026-06-15</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card roadmap-card">
+  <div class="card-header">
+    <h2 class="card-title">🗺 Development Roadmap</h2>
+    <div class="card-subtitle">Phases complete when ALL exit criteria are met</div>
+  </div>
+  <div class="roadmap-scroll">
+    <div class="roadmap-track">
+  <div class="phase-card complete" title="Establish research questions, hypotheses, metric specifications, and knowledge structure before further implementation.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#10b981; color:#10b981">0</div>
+      <div class="phase-status-dot" style="color:#10b981">●</div>
+    </div>
+    <div class="phase-name">Foundation</div>
+    <div class="phase-status-label" style="color:#10b981">COMPLETE</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:100%; background:#10b981"></div>
+    </div>
+    <div class="phase-prog-text">100%</div>
+    <div class="phase-criteria">✅ 4/4 criteria</div>
+    <div class="phase-rv" style="color:#ef4444">★ Critical</div>
+  </div>
+  <div class="phase-card active phase-current" title="Build the research platform shell: Dashboard, Experiment Manager, Configuration Manager, Metrics Engine, and Experiment Database.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#00d4ff; color:#00d4ff">1</div>
+      <div class="phase-status-dot" style="color:#00d4ff">◉</div>
+    </div>
+    <div class="phase-name">Platform</div>
+    <div class="phase-status-label" style="color:#00d4ff">ACTIVE</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:35%; background:#00d4ff"></div>
+    </div>
+    <div class="phase-prog-text">35%</div>
+    <div class="phase-criteria">✅ 0/6 criteria</div>
+    <div class="phase-rv" style="color:#10b981">★ High</div>
+  </div>
+  <div class="phase-card in_progress" title="Formalize all existing algorithms into the factory pattern. Implement Potential Field planner. Refactor navigation monolith.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#f59e0b; color:#f59e0b">2</div>
+      <div class="phase-status-dot" style="color:#f59e0b">◑</div>
+    </div>
+    <div class="phase-name">Algorithms</div>
+    <div class="phase-status-label" style="color:#f59e0b">IN PROGRESS</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:20%; background:#f59e0b"></div>
+    </div>
+    <div class="phase-prog-text">20%</div>
+    <div class="phase-criteria">✅ 0/6 criteria</div>
+    <div class="phase-rv" style="color:#10b981">★ High</div>
+  </div>
+  <div class="phase-card planned" title="First publishable result: statistically validated comparison of all four planners across all world scenarios.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#64748b; color:#64748b">3</div>
+      <div class="phase-status-dot" style="color:#64748b">○</div>
+    </div>
+    <div class="phase-name">Benchmark</div>
+    <div class="phase-status-label" style="color:#64748b">PLANNED</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:0%; background:#64748b"></div>
+    </div>
+    <div class="phase-prog-text">0%</div>
+    <div class="phase-criteria">✅ 0/4 criteria</div>
+    <div class="phase-rv" style="color:#f59e0b">★ Very High</div>
+  </div>
+  <div class="phase-card planned" title="Implement and compare multiple hybrid fusion strategies in the HybridCoordinator. Implement dynamic replanning.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#64748b; color:#64748b">4</div>
+      <div class="phase-status-dot" style="color:#64748b">○</div>
+    </div>
+    <div class="phase-name">Hybrid Nav</div>
+    <div class="phase-status-label" style="color:#64748b">PLANNED</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:0%; background:#64748b"></div>
+    </div>
+    <div class="phase-prog-text">0%</div>
+    <div class="phase-criteria">✅ 0/3 criteria</div>
+    <div class="phase-rv" style="color:#f59e0b">★ Very High</div>
+  </div>
+  <div class="phase-card planned" title="Sensitivity analysis and ablation study on the best hybrid configuration. Lock the final configuration profile.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#64748b; color:#64748b">5</div>
+      <div class="phase-status-dot" style="color:#64748b">○</div>
+    </div>
+    <div class="phase-name">Optimization</div>
+    <div class="phase-status-label" style="color:#64748b">PLANNED</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:0%; background:#64748b"></div>
+    </div>
+    <div class="phase-prog-text">0%</div>
+    <div class="phase-criteria">✅ 0/3 criteria</div>
+    <div class="phase-rv" style="color:#10b981">★ High</div>
+  </div>
+  <div class="phase-card planned" title="Write, review, and submit the research paper on Hybrid Single-UAV Navigation.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#64748b; color:#64748b">6</div>
+      <div class="phase-status-dot" style="color:#64748b">○</div>
+    </div>
+    <div class="phase-name">Paper</div>
+    <div class="phase-status-label" style="color:#64748b">PLANNED</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:10%; background:#64748b"></div>
+    </div>
+    <div class="phase-prog-text">10%</div>
+    <div class="phase-criteria">✅ 0/4 criteria</div>
+    <div class="phase-rv" style="color:#ef4444">★ Critical</div>
+  </div>
+  <div class="phase-card planned" title="Upgrade to real Webots DistanceSensors. Add dynamic obstacle (moving pedestrian) handling.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#64748b; color:#64748b">7</div>
+      <div class="phase-status-dot" style="color:#64748b">○</div>
+    </div>
+    <div class="phase-name">Dynamic Obs</div>
+    <div class="phase-status-label" style="color:#64748b">PLANNED</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:0%; background:#64748b"></div>
+    </div>
+    <div class="phase-prog-text">0%</div>
+    <div class="phase-criteria">✅ 0/2 criteria</div>
+    <div class="phase-rv" style="color:#00d4ff">★ Medium</div>
+  </div>
+  <div class="phase-card planned" title="Unfreeze UAV_1–4. Implement sector-based task allocation and UAV-UAV collision avoidance.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#64748b; color:#64748b">8</div>
+      <div class="phase-status-dot" style="color:#64748b">○</div>
+    </div>
+    <div class="phase-name">Multi-UAV</div>
+    <div class="phase-status-label" style="color:#64748b">PLANNED</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:0%; background:#64748b"></div>
+    </div>
+    <div class="phase-prog-text">0%</div>
+    <div class="phase-criteria">✅ 0/2 criteria</div>
+    <div class="phase-rv" style="color:#10b981">★ High</div>
+  </div>
+  <div class="phase-card planned" title="Dynamic sector reassignment, density-based coverage, emergent coordination strategies.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#64748b; color:#64748b">9</div>
+      <div class="phase-status-dot" style="color:#64748b">○</div>
+    </div>
+    <div class="phase-name">Swarm</div>
+    <div class="phase-status-label" style="color:#64748b">PLANNED</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:0%; background:#64748b"></div>
+    </div>
+    <div class="phase-prog-text">0%</div>
+    <div class="phase-criteria">✅ 0/1 criteria</div>
+    <div class="phase-rv" style="color:#10b981">★ High</div>
+  </div>
+  <div class="phase-card planned" title="Replace the hand-coded HybridCoordinator fusion strategy with a learned RL policy.">
+    <div class="phase-header">
+      <div class="phase-num" style="border-color:#64748b; color:#64748b">10</div>
+      <div class="phase-status-dot" style="color:#64748b">○</div>
+    </div>
+    <div class="phase-name">RL</div>
+    <div class="phase-status-label" style="color:#64748b">PLANNED</div>
+    <div class="phase-progress-bar-wrap">
+      <div class="phase-progress-bar" style="width:0%; background:#64748b"></div>
+    </div>
+    <div class="phase-prog-text">0%</div>
+    <div class="phase-criteria">✅ 0/1 criteria</div>
+    <div class="phase-rv" style="color:#f59e0b">★ Very High</div>
+  </div></div>
+  </div>
+</section>
+<div class="two-col">
+
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">🧩 Platform Modules</h2>
+  </div>
+  <div class="modules-list">
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Webots Simulation</div>
+        <div class="module-desc">Webots R2025a simulation environment with 6 urban worlds, DJI Mavic 2 Pro model, crowd and bird agents.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#10b981; border-color:#10b981">Implemented</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:90%; background:#10b981"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Planner Factory</div>
+        <div class="module-desc">Runtime registry for all path planning algorithms. Instantiates planners by name from YAML config.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#f59e0b; border-color:#f59e0b">In Progress</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:40%; background:#f59e0b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Avoidance Factory</div>
+        <div class="module-desc">Runtime registry for collision avoidance modules. Two-tier architecture: primary (8-ray) + emergency safety layer.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#f59e0b; border-color:#f59e0b">In Progress</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:30%; background:#f59e0b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Hybrid Coordinator</div>
+        <div class="module-desc">Fuses global planning direction with reactive avoidance vectors. Core research contribution module.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#f59e0b; border-color:#f59e0b">In Progress</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:20%; background:#f59e0b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Navigation Engine</div>
+        <div class="module-desc">Mission state machine (GROUND_IDLE→ASCEND→NAVIGATE→ARRIVED). Kinematic flight model.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#10b981; border-color:#10b981">Implemented</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:85%; background:#10b981"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Safety Manager</div>
+        <div class="module-desc">Hard constraint enforcement: geofence, altitude bounds, emergency stops. Independent of algorithm stack.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#f59e0b; border-color:#f59e0b">In Progress</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:50%; background:#f59e0b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Metrics Engine</div>
+        <div class="module-desc">Ground-truth metric collection (M01–M16) with quality designations. Validates measurement anomalies.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#f59e0b; border-color:#f59e0b">In Progress</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:40%; background:#f59e0b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Experiment Manager</div>
+        <div class="module-desc">Orchestrates all experiments. Assigns IDs, locks configs, monitors runs, triggers benchmark engine.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:0%; background:#64748b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Benchmark Engine</div>
+        <div class="module-desc">Statistical analysis pipeline: computes CI, p-values, effect sizes, Pareto ranking, and publication figures.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:5%; background:#64748b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Research Dashboard</div>
+        <div class="module-desc">Entry point for all project participants. Reads dashboard_state.json and renders a self-contained HTML report.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#f59e0b; border-color:#f59e0b">In Progress</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:60%; background:#f59e0b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Report Generator</div>
+        <div class="module-desc">Converts benchmark outputs to HTML, PDF, and LaTeX for internal review and paper submission.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:0%; background:#64748b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">Swarm Coordinator</div>
+        <div class="module-desc">Multi-agent mission orchestrator: sector assignment, inter-UAV coordination, leader election.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:0%; background:#64748b"></div>
+        </div>
+      </div>
+    </div>
+    <div class="module-row">
+      <div class="module-info">
+        <div class="module-name">RL Optimization Engine</div>
+        <div class="module-desc">Replaces hand-coded HybridCoordinator fusion with a learned PPO policy.</div>
+      </div>
+      <div class="module-right">
+        <div class="module-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+        <div class="module-prog-bar-wrap">
+          <div class="module-prog-bar" style="width:15%; background:#64748b"></div>
+        </div>
+      </div>
+    </div></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">⚙ Algorithm Registry</h2>
+  </div>
+  <div class="algorithms-container">
+    <div class="alg-category">
+      <div class="alg-cat-label">🗺 Path Planners</div>
+      
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">A* (Grid 8-connected)</span>
+          <span class="alg-metric">Path length: ~1371m (downtown)</span>
+        </div>
+        <div class="alg-badge" style="color:#10b981; border-color:#10b981">Registered</div>
+      </div>
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">Dijkstra (Zero Heuristic)</span>
+          <span class="alg-metric">Compute: ~18.7ms (downtown)</span>
+        </div>
+        <div class="alg-badge" style="color:#10b981; border-color:#10b981">Registered</div>
+      </div>
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">RRT (Bidirectional)</span>
+          <span class="alg-metric">Smoothness: ~0.92 (downtown)</span>
+        </div>
+        <div class="alg-badge" style="color:#10b981; border-color:#10b981">Registered</div>
+      </div>
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">Potential Field</span>
+          
+        </div>
+        <div class="alg-badge" style="color:#ef4444; border-color:#ef4444">Missing</div>
+      </div>
+    </div>
+    <div class="alg-category">
+      <div class="alg-cat-label">🛡 Collision Avoidance</div>
+      
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">8-Ray Geometric Sensor</span>
+          <span class="alg-metric">Near-misses: ~8 (downtown)</span>
+        </div>
+        <div class="alg-badge" style="color:#10b981; border-color:#10b981">Registered</div>
+      </div>
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">Safety Layer Repulsion</span>
+          
+        </div>
+        <div class="alg-badge" style="color:#10b981; border-color:#10b981">Registered</div>
+      </div>
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">Velocity Obstacle (VO)</span>
+          
+        </div>
+        <div class="alg-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+      </div>
+    </div>
+    <div class="alg-category">
+      <div class="alg-cat-label">⚡ Hybrid Fusion</div>
+      
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">Weighted Blend Fusion</span>
+          <span class="alg-metric">Path efficiency: 0.882</span>
+        </div>
+        <div class="alg-badge" style="color:#f59e0b; border-color:#f59e0b">In Progress</div>
+      </div>
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">Distance-Gated Fusion</span>
+          
+        </div>
+        <div class="alg-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+      </div>
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">Confidence-Weighted Fusion</span>
+          
+        </div>
+        <div class="alg-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+      </div>
+      <div class="alg-row">
+        <div class="alg-info">
+          <span class="alg-name">RL Learned Fusion</span>
+          
+        </div>
+        <div class="alg-badge" style="color:#64748b; border-color:#64748b">Planned</div>
+      </div>
+    </div></div>
+</div>
+</div>
+<div class="two-col">
+
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">🌆 Simulation Environments</h2>
+  </div>
+  <div class="environments-grid">
+    <div class="env-card" style="border-color:#10b98120">
+      <div class="env-header">
+        <div class="env-name">Downtown</div>
+        <div class="env-badge" style="color:#10b981">Active</div>
+      </div>
+      <div class="env-desc">Dense urban canyon with commercial buildings. Primary development and benchmark world.</div>
+      <div class="env-stats">
+        <span title="Crowd count">👥 15</span>
+        <span title="Area">📐 40,000m²</span>
+        <span title="Altitude">✈ 15.0m</span>
+      </div>
+      <div class="env-last">Last used: 2026-07-01</div>
+    </div>
+    <div class="env-card" style="border-color:#00d4ff20">
+      <div class="env-header">
+        <div class="env-name">Residential</div>
+        <div class="env-badge" style="color:#00d4ff">Available</div>
+      </div>
+      <div class="env-desc">Low-density residential area. Fewer obstacles, higher crowd dispersion.</div>
+      <div class="env-stats">
+        <span title="Crowd count">👥 8</span>
+        <span title="Area">📐 25,600m²</span>
+        <span title="Altitude">✈ 10.0m</span>
+      </div>
+      <div class="env-last">Never used</div>
+    </div>
+    <div class="env-card" style="border-color:#00d4ff20">
+      <div class="env-header">
+        <div class="env-name">Industrial</div>
+        <div class="env-badge" style="color:#00d4ff">Available</div>
+      </div>
+      <div class="env-desc">Industrial zone with large structures and limited open corridors.</div>
+      <div class="env-stats">
+        <span title="Crowd count">👥 10</span>
+        <span title="Area">📐 32,400m²</span>
+        <span title="Altitude">✈ 12.0m</span>
+      </div>
+      <div class="env-last">Never used</div>
+    </div>
+    <div class="env-card" style="border-color:#00d4ff20">
+      <div class="env-header">
+        <div class="env-name">Mixed</div>
+        <div class="env-badge" style="color:#00d4ff">Available</div>
+      </div>
+      <div class="env-desc">Combined residential and commercial. Highest crowd density scenario.</div>
+      <div class="env-stats">
+        <span title="Crowd count">👥 35</span>
+        <span title="Area">📐 32,400m²</span>
+        <span title="Altitude">✈ 15.0m</span>
+      </div>
+      <div class="env-last">Never used</div>
+    </div>
+    <div class="env-card" style="border-color:#00d4ff20">
+      <div class="env-header">
+        <div class="env-name">Event</div>
+        <div class="env-badge" style="color:#00d4ff">Available</div>
+      </div>
+      <div class="env-desc">Crowded event area. Maximum crowd density. Stress test for TRR metric.</div>
+      <div class="env-stats">
+        <span title="Crowd count">👥 40</span>
+        <span title="Area">📐 25,600m²</span>
+        <span title="Altitude">✈ 12.0m</span>
+      </div>
+      <div class="env-last">Never used</div>
+    </div></div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2 class="card-title">🏆 Best Configuration</h2></div>
+  <div class="best-config">
+    <div class="config-profile">hybrid_astar_geometric v1.3.0</div>
+    <div class="config-exp">Evidence: EXP-0033</div>
+    <div class="config-metrics">
+      <div class="config-metric">
+        <div class="config-metric-val" style="color:#10b981">0.882</div>
+        <div class="config-metric-label">Path Efficiency</div>
+      </div>
+      <div class="config-metric">
+        <div class="config-metric-val" style="color:#f59e0b">8</div>
+        <div class="config-metric-label">Near-Misses</div>
+      </div>
+      <div class="config-metric">
+        <div class="config-metric-val" style="color:#00d4ff">1.48%</div>
+        <div class="config-metric-label">TRR</div>
+      </div>
+      <div class="config-metric">
+        <div class="config-metric-val" style="color:#a78bfa">25.0%</div>
+        <div class="config-metric-label">Coverage</div>
+      </div></div>
+    <div class="config-confidence" style="color:#f59e0b">
+      Confidence: Low (n=1 — needs n≥5)
+    </div>
+    <div class="config-note">Best single measured run. Not statistically validated. Requires n≥5 trials for benchmark qualification.</div>
+  </div>
+</div>
+</div>
+
+<section class="card paper-card">
+  <div class="card-header">
+    <h2 class="card-title">📄 Paper Progress</h2>
+    <div class="paper-overall" style="color:#f59e0b">10% overall</div>
+  </div>
+  <div class="paper-sections">
+    <div class="paper-row">
+      <div class="paper-section-name">Introduction</div>
+      <div class="paper-bar-wrap">
+        <div class="paper-bar" style="width:15%; background:#f59e0b"></div>
+      </div>
+      <div class="paper-pct" style="color:#f59e0b">15%</div>
+      <div class="paper-note">Problem statement drafted</div>
+    </div>
+    <div class="paper-row">
+      <div class="paper-section-name">Related Work</div>
+      <div class="paper-bar-wrap">
+        <div class="paper-bar" style="width:5%; background:#64748b"></div>
+      </div>
+      <div class="paper-pct" style="color:#64748b">5%</div>
+      <div class="paper-note">Literature review pending</div>
+    </div>
+    <div class="paper-row">
+      <div class="paper-section-name">Methodology</div>
+      <div class="paper-bar-wrap">
+        <div class="paper-bar" style="width:40%; background:#00d4ff"></div>
+      </div>
+      <div class="paper-pct" style="color:#00d4ff">40%</div>
+      <div class="paper-note">Architecture described; algorithms pending</div>
+    </div>
+    <div class="paper-row">
+      <div class="paper-section-name">Experiments</div>
+      <div class="paper-bar-wrap">
+        <div class="paper-bar" style="width:0%; background:#64748b"></div>
+      </div>
+      <div class="paper-pct" style="color:#64748b">0%</div>
+      <div class="paper-note">Awaiting Phase 3 benchmark</div>
+    </div>
+    <div class="paper-row">
+      <div class="paper-section-name">Results</div>
+      <div class="paper-bar-wrap">
+        <div class="paper-bar" style="width:0%; background:#64748b"></div>
+      </div>
+      <div class="paper-pct" style="color:#64748b">0%</div>
+      <div class="paper-note">Awaiting Phase 4 hybrid navigation</div>
+    </div>
+    <div class="paper-row">
+      <div class="paper-section-name">Conclusion</div>
+      <div class="paper-bar-wrap">
+        <div class="paper-bar" style="width:0%; background:#64748b"></div>
+      </div>
+      <div class="paper-pct" style="color:#64748b">0%</div>
+      <div class="paper-note">Awaiting results</div>
+    </div></div>
+</section>
+
+<section class="card experiments-card">
+  <div class="card-header">
+    <h2 class="card-title">🧪 Recent Experiments</h2>
+    <div class="card-subtitle">Last 3 of 3 runs</div>
+  </div>
+  <div class="table-scroll">
+    <table class="experiments-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Name</th><th>Config</th><th>World</th>
+          <th>Status</th><th>Efficiency</th><th>Near-Misses</th><th>TRR</th><th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+    <tr class="exp-row">
+      <td class="exp-id">EXP-0033</td>
+      <td class="exp-name">A* Hybrid Baseline — Downtown</td>
+      <td>hybrid_astar_geometric</td>
+      <td>downtown</td>
+      <td class="exp-status"><span style="color:#10b981">● PASS</span></td>
+      <td class="exp-metric">0.882</td>
+      <td class="exp-metric">8</td>
+      <td class="exp-metric">1.48%</td>
+      <td class="exp-ts">2026-07-01 22:15</td>
+    </tr>
+    <tr class="exp-row">
+      <td class="exp-id">EXP-0032</td>
+      <td class="exp-name">RRT Hybrid Baseline — Downtown</td>
+      <td>hybrid_rrt_geometric</td>
+      <td>downtown</td>
+      <td class="exp-status"><span style="color:#10b981">● PASS</span></td>
+      <td class="exp-metric">0.811</td>
+      <td class="exp-metric">12</td>
+      <td class="exp-metric">1.21%</td>
+      <td class="exp-ts">2026-06-30 19:21</td>
+    </tr>
+    <tr class="exp-row">
+      <td class="exp-id">EXP-0031</td>
+      <td class="exp-name">Dijkstra Baseline — Downtown</td>
+      <td>baseline_dijkstra</td>
+      <td>downtown</td>
+      <td class="exp-status"><span style="color:#10b981">● PASS</span></td>
+      <td class="exp-metric">0.864</td>
+      <td class="exp-metric">11</td>
+      <td class="exp-metric">1.31%</td>
+      <td class="exp-ts">2026-06-29 18:00</td>
+    </tr></tbody>
+    </table>
+  </div>
+</section>
+<div class="two-col">
+
+<div class="card">
+  <div class="card-header"><h2 class="card-title">📚 Knowledge Base</h2></div>
+  <div class="kb-list">
+    <div class="kb-item">
+      <div class="kb-icon">🏗</div>
+      <div class="kb-content">
+        <div class="kb-title">Master Architecture Document <a href="file:///C:/Users/Welcome/.gemini/antigravity-ide/brain/37e1ed02-602c-4c1b-b8da-0ceb82178c12/master_architecture.md" class="kb-link" target="_blank">Open ↗</a></div>
+        <div class="kb-desc">Complete 11-phase system design, module specifications, folder structure, and research workflow.</div>
+        <div class="kb-footer"><span class="kb-tag">architecture</span><span class="kb-tag">CTO</span><span class="kb-tag">roadmap</span><span class="kb-date">2026-07-01</span></div>
+      </div>
+    </div>
+    <div class="kb-item">
+      <div class="kb-icon">🔍</div>
+      <div class="kb-content">
+        <div class="kb-title">Engineering Audit Report <a href="file:///C:/Users/Welcome/.gemini/antigravity-ide/brain/37e1ed02-602c-4c1b-b8da-0ceb82178c12/engineering_audit.md" class="kb-link" target="_blank">Open ↗</a></div>
+        <div class="kb-desc">Full technical audit of the repository as of 2026-07-01. Covers module status, technical debt, research readiness score.</div>
+        <div class="kb-footer"><span class="kb-tag">audit</span><span class="kb-tag">status</span><span class="kb-tag">technical-debt</span><span class="kb-date">2026-07-01</span></div>
+      </div>
+    </div>
+    <div class="kb-item">
+      <div class="kb-icon">❓</div>
+      <div class="kb-content">
+        <div class="kb-title">Research Question Q-001 </div>
+        <div class="kb-desc">Does hybrid navigation outperform single-strategy? Primary research question driving the paper.</div>
+        <div class="kb-footer"><span class="kb-tag">research</span><span class="kb-tag">primary</span><span class="kb-tag">hypothesis</span><span class="kb-date">2026-06-15</span></div>
+      </div>
+    </div>
+    <div class="kb-item">
+      <div class="kb-icon">⚖</div>
+      <div class="kb-content">
+        <div class="kb-title">ADR-001: Factory Pattern for All Algorithms <a href="file:///docs/decisions/" class="kb-link" target="_blank">Open ↗</a></div>
+        <div class="kb-desc">All planners and avoidance modules accessed exclusively through factory classes. Rationale: enables algorithm swapping without modifying navigation core.</div>
+        <div class="kb-footer"><span class="kb-tag">ADR</span><span class="kb-tag">architecture</span><span class="kb-tag">factory</span><span class="kb-date">2026-07-01</span></div>
+      </div>
+    </div>
+    <div class="kb-item">
+      <div class="kb-icon">⚖</div>
+      <div class="kb-content">
+        <div class="kb-title">ADR-002: Metrics Quality Designation <a href="file:///docs/decisions/" class="kb-link" target="_blank">Open ↗</a></div>
+        <div class="kb-desc">Every metric classified as ground_truth, proxy_model, or approximation. TRR and Coverage are proxy_model.</div>
+        <div class="kb-footer"><span class="kb-tag">ADR</span><span class="kb-tag">metrics</span><span class="kb-tag">ground-truth</span><span class="kb-date">2026-07-01</span></div>
+      </div>
+    </div>
+    <div class="kb-item">
+      <div class="kb-icon">🏗</div>
+      <div class="kb-content">
+        <div class="kb-title">Metric Specifications (M01–M16) <a href="file:///docs/metric_specifications.md" class="kb-link" target="_blank">Open ↗</a></div>
+        <div class="kb-desc">Formal specification for all 16 metrics: computation method, quality designation, known error sources.</div>
+        <div class="kb-footer"><span class="kb-tag">metrics</span><span class="kb-tag">specification</span><span class="kb-tag">ground-truth</span><span class="kb-date">2026-07-01</span></div>
+      </div>
+    </div></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">✅ Next Tasks</h2>
+    <div class="card-subtitle">10 pending · 0 complete</div>
+  </div>
+  <div class="tasks-list">
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Fix README.md: remove claims that path planning and collision avoidance are missing (both exist)</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#ef4444;border-color:#ef4444">CRITICAL</span>
+          
+          <span class="task-owner">👤 Research Lead</span>
+          <span class="task-hours">⏱ 2.0h</span>
+          
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Fix nodes_explored stat: reset per plan() call, not cumulative across all segments</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#ef4444;border-color:#ef4444">CRITICAL</span>
+          <span class="task-phase">Ph.2</span>
+          <span class="task-owner">👤 Planner Team</span>
+          <span class="task-hours">⏱ 2.0h</span>
+          
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Move lawnmower sweep targets from _init_astar() hardcode into environment_config.yaml</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#f59e0b;border-color:#f59e0b">HIGH</span>
+          <span class="task-phase">Ph.2</span>
+          <span class="task-owner">👤 Planner Team</span>
+          <span class="task-hours">⏱ 2.0h</span>
+          
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Implement Potential Field planner following PlannerInterface contract</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#f59e0b;border-color:#f59e0b">HIGH</span>
+          <span class="task-phase">Ph.2</span>
+          <span class="task-owner">👤 Planner Team</span>
+          <span class="task-hours">⏱ 10.0h</span>
+          <span class="task-deps">⤷ T-002</span>
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Clean baseline_runs.csv: remove duplicate backfilled rows, keep only measured rows 33–40</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#f59e0b;border-color:#f59e0b">HIGH</span>
+          <span class="task-phase">Ph.1</span>
+          <span class="task-owner">👤 Benchmark Team</span>
+          <span class="task-hours">⏱ 2.0h</span>
+          
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Update requirements.txt: add gymnasium, stable-baselines3, torch, matplotlib</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#00d4ff;border-color:#00d4ff">MEDIUM</span>
+          <span class="task-phase">Ph.1</span>
+          <span class="task-owner">👤 Platform Team</span>
+          <span class="task-hours">⏱ 1.0h</span>
+          
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Design and implement Experiment Manager (YAML spec → run lifecycle → database write)</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#f59e0b;border-color:#f59e0b">HIGH</span>
+          <span class="task-phase">Ph.1</span>
+          <span class="task-owner">👤 Platform Team</span>
+          <span class="task-hours">⏱ 16.0h</span>
+          <span class="task-deps">⤷ T-005</span>
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Design and implement automated planner benchmark harness (4 planners x 5 worlds x 10 trials)</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#f59e0b;border-color:#f59e0b">HIGH</span>
+          <span class="task-phase">Ph.3</span>
+          <span class="task-owner">👤 Benchmark Team</span>
+          <span class="task-hours">⏱ 14.0h</span>
+          <span class="task-deps">⤷ T-004, T-007</span>
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Write Phase 3 experiment specification YAML files in experiments/queue/</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#00d4ff;border-color:#00d4ff">MEDIUM</span>
+          <span class="task-phase">Ph.3</span>
+          <span class="task-owner">👤 Benchmark Team</span>
+          <span class="task-hours">⏱ 3.0h</span>
+          <span class="task-deps">⤷ T-007</span>
+        </div>
+      </div>
+    </div>
+    <div class="task-item">
+      <div class="task-check">○</div>
+      <div class="task-content">
+        <div class="task-text">Create docs/metric_specifications.md with formal spec for M01–M16</div>
+        <div class="task-meta">
+          <span class="task-priority" style="color:#00d4ff;border-color:#00d4ff">MEDIUM</span>
+          <span class="task-phase">Ph.1</span>
+          <span class="task-owner">👤 Research Lead</span>
+          <span class="task-hours">⏱ 4.0h</span>
+          
+        </div>
+      </div>
+    </div></div>
+</div>
+</div>
+</main>
+
+<footer class="dashboard-footer">
+  <div class="footer-left">
+    Hybrid Multi-UAV Navigation Research Platform · Platform v1.0.0
+  </div>
+  <div class="footer-right">
+    Generated 2026-07-02 00:09 · dashboard_state.json
+  </div>
+</footer>
+<script>
+// Animate progress bars on load
+document.addEventListener('DOMContentLoaded', () => {
+  // Animate phase progress bars
+  document.querySelectorAll('.phase-progress-bar').forEach(bar => {
+    const target = bar.style.width;
+    bar.style.width = '0';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bar.style.transition = 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+        bar.style.width = target;
+      });
+    });
+  });
+
+  // Animate module progress bars
+  document.querySelectorAll('.module-prog-bar').forEach(bar => {
+    const target = bar.style.width;
+    bar.style.width = '0';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bar.style.transition = 'width 0.6s ease-out';
+        bar.style.width = target;
+      });
+    });
+  });
+
+  // Animate paper section bars
+  document.querySelectorAll('.paper-bar').forEach(bar => {
+    const target = bar.style.width;
+    bar.style.width = '0';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bar.style.transition = 'width 0.7s ease-out';
+        bar.style.width = target;
+      });
+    });
+  });
+
+  // Animate readiness ring
+  const ring = document.querySelector('.ring-fill');
+  if (ring) {
+    const target = ring.style.strokeDasharray;
+    ring.style.strokeDasharray = '0 213.6';
+    setTimeout(() => {
+      ring.style.transition = 'stroke-dasharray 1s ease-out';
+      ring.style.strokeDasharray = target;
+    }, 200);
+  }
+
+  // Add generated timestamp
+  console.log('%c🚁 Research Dashboard loaded', 'color:#00d4ff; font-weight:bold; font-size:14px');
+  console.log('State file: dashboard_state.json');
+  console.log('To update: python platform/dashboard/dashboard.py');
+});
+</script>
+</body>
+</html>
