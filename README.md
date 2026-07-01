@@ -56,13 +56,9 @@ The project currently contains:
 
 But still lacks:
 
-❌ real path planning
-
-❌ collision avoidance
-
 ❌ swarm intelligence
 
-❌ autonomous navigation
+❌ multi-agent reinforcement learning (MAPPO)
 
 ---
 
@@ -174,6 +170,19 @@ Current development focus.
 
 Implemented:
 
+### Planners
+* A* (grid-based)
+* Dijkstra (grid-based)
+* Bidirectional RRT (sampling-based)
+
+### Collision Avoidance
+* Reactive 8-ray obstacle avoidance
+* Building-distance safety layer
+
+### Telemetry & Dashboard
+* Comprehensive metrics infrastructure
+* React-based Research Dashboard (HTML)
+
 ### Fixed Mission
 
 ```text
@@ -195,8 +204,6 @@ Target:
 Provides a measurable benchmark before:
 
 ```text
-collision avoidance
-path planning
 swarm coordination
 RL
 ```
