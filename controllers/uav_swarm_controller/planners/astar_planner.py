@@ -235,6 +235,7 @@ class AStarPlanner(PlannerBase):
         Returns:
             List of waypoints [(x, y), ...] in world meters (2D)
         """
+        self.nodes_explored = 0
         start_t = time.perf_counter()
         
         # Convert coordinates to grid
