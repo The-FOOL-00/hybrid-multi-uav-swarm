@@ -1300,8 +1300,8 @@ class SingleDroneNavigation:
             
         start_xy = (self.start_pos[0], self.start_pos[1])
         
-        # Define lawnmower sweep key waypoints covering the full 200m x 200m world along street centerlines
-        sweep_targets = [
+        # Define lawnmower sweep key waypoints from config, appending final target
+        sweep_targets = self.baseline_nav_cfg.get("sweep_targets", [
             [-90.0, -80.0],
             [90.0, -80.0],
             [90.0, -40.0],
@@ -1311,9 +1311,8 @@ class SingleDroneNavigation:
             [90.0, 40.0],
             [-90.0, 40.0],
             [-90.0, 80.0],
-            [90.0, 80.0],
-            [self.target_pos[0], self.target_pos[1]]
-        ]
+            [90.0, 80.0]
+        ]) + [[self.target_pos[0], self.target_pos[1]]]
 
         print(f"[{self.planner_type.upper()}] Planning lawnmower sweep through checkpoints: {sweep_targets}")
         
@@ -2313,7 +2312,6 @@ class SingleDroneNavigation:
             "average_speed_m_s": round(self.distance_travelled / travel_time, 3) if travel_time > 0 else 0.0,
             "proximity_events": self.collision_count,
             "hard_collisions": self.hard_collision_count,
-            "physics_contacts": self.physics_contact_count,
             "near_misses": self.near_miss_count,
             "near_miss_count": self.near_miss_count,
             "replans": self.replan_count,
