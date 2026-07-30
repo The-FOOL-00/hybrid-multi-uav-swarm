@@ -300,6 +300,15 @@ baseline_navigation:
     slow_near_scale:      0.60  # 60 % speed at slow_near_distance
     emergency_slow_scale: 0.45  # 45 % speed below slow_near_distance
 
+  # ── Benchmarking Platform ─────────────────────────────────────────
+  # In benchmark mode (via benchmark_runner.py), the planner type is
+  # overridden by the PLANNER_TYPE environment variable. Output is routed
+  # to experiments/benchmarks/<PlannerName>/run_<NNN>/.
+  benchmarking:
+    enabled: true
+    # Note: when running benchmarks, rl mode must be false.
+
+
 
 rl:
   enabled: false              # TEMPORARILY DISABLED for single-drone baseline

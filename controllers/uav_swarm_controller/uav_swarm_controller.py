@@ -920,6 +920,7 @@ class SingleDroneNavigation:
             The `baseline_navigation` sub-dict from environment_config.yaml.
         """
         self.parent        = parent
+        self._nav_cfg      = cfg              # stored for lazy access in _init_astar()
         self.supervisor    = parent.supervisor
         self.timestep      = parent.timestep
 
@@ -1028,6 +1029,8 @@ class SingleDroneNavigation:
         self._prev_pos           = None
         self.last_trr            = 0.0
         self.last_tracked_count  = 0
+        self.min_obstacle_distance = float("inf")  # running minimum surface distance (m)
+        self.max_speed_recorded    = 0.0           # running maximum XY speed (m/step)
 
         # -- Planner setup ----------------------------------------------
         planner_cfg = cfg.get("planner", {})
@@ -1301,7 +1304,7 @@ class SingleDroneNavigation:
         start_xy = (self.start_pos[0], self.start_pos[1])
         
         # Define lawnmower sweep key waypoints from config, appending final target
-        sweep_targets = self.baseline_nav_cfg.get("sweep_targets", [
+        sweep_targets = self._nav_cfg.get("sweep_targets", [
             [-90.0, -80.0],
             [90.0, -80.0],
             [90.0, -40.0],
@@ -2057,8 +2060,9 @@ class SingleDroneNavigation:
             except Exception:
                 pass
 
-            if cur[2] >= self.altitude - 0.5:
-                print(f"[SingleDroneNav] Reached mission altitude. Transitioning to NAVIGATE.")
+            if new_z >= self.altitude - 0.1:
+                self.vz = 0.0   # zero vertical velocity so NAVIGATE Z-hold starts clean
+                print(f"[SingleDroneNav] Reached cruise altitude {new_z:.2f}m. Transitioning to NAVIGATE.")
                 self.state = self.STATE_NAVIGATE
                 
             return True
@@ -2202,6 +2206,11 @@ class SingleDroneNavigation:
                 self.collision_count += 1  # Accumulate proximity warning steps
             if min_dist < 0.0:
                 self.hard_collision_count += 1  # Accumulate actual building interpenetration steps
+            # Benchmark tracking: update running min obstacle distance and max speed
+            if min_dist < self.min_obstacle_distance:
+                self.min_obstacle_distance = min_dist
+            if self.last_speed > self.max_speed_recorded:
+                self.max_speed_recorded = self.last_speed
 
             if safety_state == CollisionSafetyLayer.EMERGENCY and \
                (self.step_count - self.last_warning_step) > 20:
@@ -2325,15 +2334,30 @@ class SingleDroneNavigation:
             "planner_nodes_explored": planner_stats["nodes_explored"] if planner_stats else 0,
             "planner_path_length_m": round(planner_stats["path_length_m"], 3) if planner_stats else 0.0,
             "planner_smoothness_score": round(planner_stats["smoothness_score"], 3) if planner_stats else 1.0,
+            "min_obstacle_distance_m": round(self.min_obstacle_distance, 3) if self.min_obstacle_distance != float("inf") else -1.0,
+            "max_speed_m_s": round(self.max_speed_recorded, 5),
             "buildings": [{"name": b["name"], "x": b["x"], "y": b["y"], "r": b["r"]} for b in self.test_buildings],
             "step_log": self.step_log
         }
         
-        # Output path
+        # Output path — routed to experiments/benchmarks/ when BENCHMARK_MODE env var is set.
+        # Normal (non-benchmark) runs continue to go to experiments/single_drone/<timestamp>/.
         script_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
         timestamp = _time.strftime("%Y%m%d_%H%M%S")
-        out_dir = os.path.join(root_dir, "experiments", "single_drone", timestamp)
+        _benchmark_mode = os.environ.get("BENCHMARK_MODE", "false").lower() == "true"
+        _planner_type = getattr(self, "planner_type", "astar")
+        if _benchmark_mode:
+            _folder_map = {"astar": "A_star", "dijkstra": "Dijkstra", "rrt": "RRT"}
+            _planner_folder = _folder_map.get(_planner_type, _planner_type.capitalize())
+            _planner_dir = os.path.join(root_dir, "experiments", "benchmarks", _planner_folder)
+            os.makedirs(_planner_dir, exist_ok=True)
+            _existing_runs = sorted([d for d in os.listdir(_planner_dir) if d.startswith("run_")])
+            _run_num = len(_existing_runs) + 1
+            out_dir = os.path.join(_planner_dir, f"run_{_run_num:03d}")
+            print(f"[BenchmarkRunner] Output folder: {out_dir}")
+        else:
+            out_dir = os.path.join(root_dir, "experiments", "single_drone", timestamp)
         os.makedirs(out_dir, exist_ok=True)
         
         # Write JSON metrics
@@ -2341,6 +2365,25 @@ class SingleDroneNavigation:
         with open(out_path, "w") as fp:
             json.dump(metrics, fp, indent=4)
         print(f"[SingleDrone] Metrics saved successfully -> {out_path}")
+
+        # Write trajectory CSV from step_log
+        traj_csv_path = os.path.join(out_dir, "trajectory.csv")
+        try:
+            if self.step_log:
+                with open(traj_csv_path, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["step", "x", "y", "z", "state", "trr_percent",
+                                     "tracked_count", "proximity_warning"])
+                    for entry in self.step_log:
+                        writer.writerow([
+                            entry.get("step", ""),  entry.get("x", ""),
+                            entry.get("y", ""),     entry.get("z", ""),
+                            entry.get("state", ""), entry.get("trr_percent", ""),
+                            entry.get("tracked_count", ""), entry.get("proximity_warning", "")
+                        ])
+                print(f"[SingleDrone] Trajectory CSV saved -> {traj_csv_path}")
+        except Exception as e:
+            print(f"[SingleDrone][WARN] Failed to write trajectory.csv: {e}")
 
         # Write run-specific CSV
         import csv
@@ -2355,8 +2398,13 @@ class SingleDroneNavigation:
         except Exception as e:
             print(f"[SingleDrone][WARN] Failed to write run metrics.csv: {e}")
 
-        # Append to global CSV summary
-        global_csv_path = os.path.join(root_dir, "experiments", "single_drone", "baseline_runs.csv")
+        # Append to per-planner CSV (benchmark mode) or global baseline CSV (normal mode)
+        if _benchmark_mode:
+            _fm2 = {"astar": "A_star", "dijkstra": "Dijkstra", "rrt": "RRT"}
+            _pf2 = _fm2.get(_planner_type, _planner_type.capitalize())
+            global_csv_path = os.path.join(root_dir, "experiments", "benchmarks", _pf2, "runs.csv")
+        else:
+            global_csv_path = os.path.join(root_dir, "experiments", "single_drone", "baseline_runs.csv")
         global_record = {
             "timestamp": timestamp,
             "run_id": timestamp,
@@ -2657,7 +2705,12 @@ class MultiUAVSurveillance:
         self.rl_enabled = False
         self.baseline_nav_enabled = False
         self.baseline_nav_cfg = {}
-        config_path = os.path.join(root_dir, "configs", "environment_config.yaml")
+        # CONFIG_FILE env var allows benchmark_runner.py to select a world-specific
+        # config (e.g. configs/environment_easy.yaml) without modifying environment_config.yaml.
+        # Falls back to environment_config.yaml when not set — zero change for all other modes.
+        _cfg_override = os.environ.get("CONFIG_FILE", "").strip()
+        config_path = os.path.join(root_dir, _cfg_override) if _cfg_override \
+            else os.path.join(root_dir, "configs", "environment_config.yaml")
         if os.path.isfile(config_path):
             try:
                 with open(config_path, "r") as f:
@@ -2668,6 +2721,15 @@ class MultiUAVSurveillance:
                 _bn_cfg = _cfg.get("baseline_navigation", {})
                 self.baseline_nav_enabled = bool(_bn_cfg.get("enabled", False))
                 self.baseline_nav_cfg = _bn_cfg
+                # -- Benchmark runner: override planner type from environment variable ------
+                # benchmark_runner.py sets PLANNER_TYPE=astar/dijkstra/rrt before launching
+                # Webots. This allows switching planners without editing the YAML config.
+                _planner_override = os.environ.get("PLANNER_TYPE", "").strip().lower()
+                if _planner_override:
+                    if "planner" not in self.baseline_nav_cfg:
+                        self.baseline_nav_cfg["planner"] = {}
+                    self.baseline_nav_cfg["planner"]["type"] = _planner_override
+                    print(f"[BenchmarkRunner] Planner type overridden via PLANNER_TYPE env: {_planner_override.upper()}")
             except Exception as e:
                 print(f"[WARN] Failed to parse config file: {e}")
 
