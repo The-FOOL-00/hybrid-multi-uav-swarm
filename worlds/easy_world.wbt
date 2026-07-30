@@ -23,104 +23,70 @@ WorldInfo {
     angular 0.5
   }
 }
-
-# ── Viewpoint: Top-down isometric — entire world visible at once ──────────────
-# Positioned above and behind the scene so Start (-18,0), Goal (18,0),
-# all 3 buildings, and the drone are always visible simultaneously.
-# followType "Tracking Shot" keeps the drone centred as it moves.
 DEF MAIN_VIEW Viewpoint {
-  orientation -0.57 0.71 0.41 1.18
-  position -10 -45 40
+  orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
+  position 0.00013190631026239555 0.00021027433760759725 165.5311403947298
   near 0.5
   follow "UAV_0"
-  followType "Tracking Shot"
   followSmoothness 0.12
 }
-
 TexturedBackground {
   texture "noon_cloudy_countryside"
   luminosity 1.2
 }
-
 TexturedBackgroundLight {
   castShadows FALSE
 }
-
-# ── Ground ────────────────────────────────────────────────────────────────────
-# 80x80 m flat asphalt — comfortably contains the mission corridor
 Floor {
   size 80 80
   tileSize 4 4
   appearance Asphalt {
   }
 }
-
-# ── Buildings ─────────────────────────────────────────────────────────────────
-# Three 4-storey buildings placed in a staggered line between S and G.
-# Layout (top view, X right = East, Y up = North):
-#
-#   S(-18,0) ──────── [A](-6,0) ──── [B](0,4) ──── [C](6,-4) ──────── G(18,0)
-#
-# Each building footprint is 6x6 m (corners ±3, ±3).
-# Combined with obstacle_inflation=2.0 + safety_inflation=5.0 the planners
-# must route noticeably around each building.
-
-# Building A — sits directly on the corridor centreline
 DEF BUILDING_A SimpleBuilding {
   translation -6 0 0
   name "building_a"
-  floorHeight 3.0
   floorNumber 4
   corners [
-     3  3
-     3 -3
+    3 3
+    3 -3
     -3 -3
-    -3  3
+    -3 3
   ]
   wallType "brick building"
 }
-
-# Building B — offset north of centreline
 DEF BUILDING_B SimpleBuilding {
   translation 0 4 0
   name "building_b"
-  floorHeight 3.0
   floorNumber 4
   corners [
-     3  3
-     3 -3
+    3 3
+    3 -3
     -3 -3
-    -3  3
+    -3 3
   ]
   wallType "old office building"
 }
-
-# Building C — offset south of centreline
 DEF BUILDING_C SimpleBuilding {
   translation 6 -4 0
   name "building_c"
-  floorHeight 3.0
   floorNumber 4
   corners [
-     3  3
-     3 -3
+    3 3
+    3 -3
     -3 -3
-    -3  3
+    -3 3
   ]
   wallType "concrete building"
 }
-
-# ── Start Marker ─────────────────────────────────────────────────────────────
-# Bright green emissive sphere at mission start position (X=-18, Y=0, Z=10).
-# Placed at cruise altitude so it is visible from the chase-cam and top-down view.
 DEF START_MARKER Solid {
   translation -18 0 10
   children [
     Shape {
       appearance Appearance {
         material Material {
-          diffuseColor 0.0 0.85 0.0
-          emissiveColor 0.0 1.0 0.0
+          diffuseColor 0 0.85 0
+          emissiveColor 0 1 0
           transparency 0.15
         }
       }
@@ -130,20 +96,15 @@ DEF START_MARKER Solid {
     }
   ]
   name "start_marker"
-  contactMaterial "default"
-  physics NULL
 }
-
-# ── Goal Marker ───────────────────────────────────────────────────────────────
-# Bright red emissive sphere at mission goal position (X=18, Y=0, Z=10).
 DEF GOAL_MARKER Solid {
   translation 18 0 10
   children [
     Shape {
       appearance Appearance {
         material Material {
-          diffuseColor 0.85 0.0 0.0
-          emissiveColor 1.0 0.0 0.0
+          diffuseColor 0.85 0 0
+          emissiveColor 1 0 0
           transparency 0.15
         }
       }
@@ -153,26 +114,492 @@ DEF GOAL_MARKER Solid {
     }
   ]
   name "goal_marker"
-  contactMaterial "default"
-  physics NULL
 }
-
-# ── UAV_0 — spawned at ground level below Start ───────────────────────────────
-# The supervisor controller teleports UAV_0 to start_position during TAKEOFF.
-# Spawning slightly above ground (Z=0.5) prevents physics clipping on load.
 DEF UAV_0 Mavic2Pro {
-  translation -18 0 0.5
-  rotation 0 0 1 0
+  hidden position_0_0 -1.1106371558777594e-10
+  hidden position_5_0 -0.0015729103445710983
+  hidden rotation_6 0 -1 0 0.001572910344493821
+  hidden position_6_0 -0.002694684778335071
+  hidden rotation_7 -1 0 0 0.002694684778393826
+  translation -16.043617134073937 -5.23455520059414 10.001231694000356
+  rotation -2.114368463206766e-05 4.0064111329584306e-05 0.9999999989739058 2.9221416791215242
   name "UAV_0"
   controller "uav_camera"
   customData "uav_id=0"
 }
-
-# ── Supervisor ────────────────────────────────────────────────────────────────
-# Reads environment_easy.yaml (via CONFIG_FILE env var set by benchmark_runner).
-# Runs SingleDroneNavigation with the selected planner (A* / Dijkstra / RRT).
 Robot {
   name "swarm_supervisor"
   controller "uav_swarm_controller"
   supervisor TRUE
+}
+DEF ASTAR_WP_0 Solid {
+  translation -17 -3 11
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 1 0
+          emissiveColor 0.9 0.9 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 1.5
+      }
+    }
+  ]
+  name "astar_wp_0"
+}
+DEF ASTAR_WP_1 Solid {
+  translation -14.6919921875 -3.71015625 11
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 1 0
+          emissiveColor 0.9 0.9 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 1.5
+      }
+    }
+  ]
+  name "astar_wp_1"
+}
+DEF ASTAR_WP_2 Solid {
+  translation -14.6919921875 -3.71015625 11
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 1 0
+          emissiveColor 0.9 0.9 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 1.5
+      }
+    }
+  ]
+  name "astar_wp_2"
+}
+DEF ASTAR_WP_3 Solid {
+  translation -14.6919921875 -3.71015625 11
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 1 0.15
+          emissiveColor 0 0.85 0.1
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 1.5
+      }
+    }
+  ]
+  name "astar_wp_3"
+}
+DEF SAFETY_RING_0 Solid {
+  translation -6 0 15
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.1 0.05
+          emissiveColor 0.6 0 0
+          transparency 0.55
+        }
+      }
+      geometry Cylinder {
+        height 0.25
+        radius 6.47
+      }
+    }
+  ]
+  name "safety_ring_0"
+}
+DEF SAFETY_RING_1 Solid {
+  translation 0 4 15
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.1 0.05
+          emissiveColor 0.6 0 0
+          transparency 0.55
+        }
+      }
+      geometry Cylinder {
+        height 0.25
+        radius 6.47
+      }
+    }
+  ]
+  name "safety_ring_1"
+}
+DEF SAFETY_RING_2 Solid {
+  translation 6 -4 15
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.1 0.05
+          emissiveColor 0.6 0 0
+          transparency 0.55
+        }
+      }
+      geometry Cylinder {
+        height 0.25
+        radius 6.47
+      }
+    }
+  ]
+  name "safety_ring_2"
+}
+DEF LA_RAY_0 Solid {
+  translation -29.348738337695934 -1.1205630462835519 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material DEF LA_MAT_0 Material {
+          diffuseColor 0 1 0
+          emissiveColor 0 0.85 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 0.5
+      }
+    }
+  ]
+  name "la_ray_0_front"
+}
+DEF LA_RAY_1 Solid {
+  translation -28.351081837041043 -11.789153547449786 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material DEF LA_MAT_1 Material {
+          diffuseColor 0 1 0
+          emissiveColor 0 0.85 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 0.5
+      }
+    }
+  ]
+  name "la_ray_1_front-left"
+}
+DEF LA_RAY_2 Solid {
+  translation -20.1017994710561 -18.627536559618907 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material DEF LA_MAT_2 Material {
+          diffuseColor 0 1 0
+          emissiveColor 0 0.85 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 0.5
+      }
+    }
+  ]
+  name "la_ray_2_left"
+}
+DEF LA_RAY_3 Solid {
+  translation -9.433208969889867 -17.62988005896402 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material DEF LA_MAT_3 Material {
+          diffuseColor 0 1 0
+          emissiveColor 0 0.85 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 0.5
+      }
+    }
+  ]
+  name "la_ray_3_rear-left"
+}
+DEF LA_RAY_4 Solid {
+  translation -2.5948259577207455 -9.380597692979077 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material DEF LA_MAT_4 Material {
+          diffuseColor 0 1 0
+          emissiveColor 0 0.85 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 0.5
+      }
+    }
+  ]
+  name "la_ray_4_rear"
+}
+DEF LA_RAY_5 Solid {
+  translation -9.16316731857535 -1.6543651218311526 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material DEF LA_MAT_5 Material {
+          diffuseColor 0 1 0
+          emissiveColor 0.95 0.85 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 0.5
+      }
+    }
+  ]
+  name "la_ray_5_rear-right"
+}
+DEF LA_RAY_6 Solid {
+  translation -11.841764824360578 8.12637582035628 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material DEF LA_MAT_6 Material {
+          diffuseColor 0 1 0
+          emissiveColor 0 0.85 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 0.5
+      }
+    }
+  ]
+  name "la_ray_6_right"
+}
+DEF LA_RAY_7 Solid {
+  translation -22.510355325526813 7.128719319701393 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material DEF LA_MAT_7 Material {
+          diffuseColor 0 1 0
+          emissiveColor 0 0.85 0
+          shininess 0.9
+        }
+      }
+      geometry Sphere {
+        radius 0.5
+      }
+    }
+  ]
+  name "la_ray_7_front-right"
+}
+DEF TRAIL_0 Solid {
+  translation -17.117253882405496 -0.427213418731611 9.99786207576295
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_0"
+}
+DEF TRAIL_1 Solid {
+  translation -16.745823841821526 -1.5173299660121184 9.999939608931879
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_1"
+}
+DEF TRAIL_2 Solid {
+  translation -17.1926622815231 -2.4126252456132042 9.999998294101799
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_2"
+}
+DEF TRAIL_3 Solid {
+  translation -18.142657944640668 -3.077960606381316 9.9999999518126
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_3"
+}
+DEF TRAIL_4 Solid {
+  translation -19.263804795872225 -4.046266490964605 9.999999998638827
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_4"
+}
+DEF TRAIL_5 Solid {
+  translation -19.5828846050046 -5.835192297014439 9.99999999996155
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_5"
+}
+DEF TRAIL_6 Solid {
+  translation -18.45074009115078 -7.4446117370500575 9.999999999998913
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_6"
+}
+DEF TRAIL_7 Solid {
+  translation -16.654661811992533 -7.749815156635461 9.99999999999997
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_7"
+}
+DEF TRAIL_8 Solid {
+  translation -15.478657676881257 -6.906920931133158 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_8"
+}
+DEF TRAIL_9 Solid {
+  translation -15.323431126480942 -5.906362231360468 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_9"
+}
+DEF TRAIL_10 Solid {
+  translation -15.771454392552911 -5.330375717971611 9.999999999999998
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 0.4 1
+          emissiveColor 0 0.35 0.9
+          shininess 0.7
+        }
+      }
+      geometry Sphere {
+        radius 0.35
+      }
+    }
+  ]
+  name "trail_10"
 }

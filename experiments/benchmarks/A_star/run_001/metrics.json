@@ -1,0 +1,168 @@
+{
+    "phase": "Phase 1  -  Single Drone Lawnmower Patrol & Surveillance Baseline",
+    "world": "worlds/single_drone_downtown.wbt",
+    "data_quality": "measured",
+    "start_pos": [
+        -18.0,
+        0.0,
+        10.0
+    ],
+    "target_pos": [
+        18.0,
+        0.0,
+        10.0
+    ],
+    "reached_target": true,
+    "travel_time_s": 2.8,
+    "distance_travelled_m": 24.617,
+    "average_speed_m_s": 8.792,
+    "proximity_events": 0,
+    "hard_collisions": 0,
+    "near_misses": 80,
+    "near_miss_count": 80,
+    "replans": 1,
+    "replan_count": 1,
+    "altitude_stability_std_m": 3.60559,
+    "mean_trr_percent": 0.0,
+    "cumulative_coverage_percent": 0.25,
+    "total_steps": 351,
+    "planner_type": "astar",
+    "planner_compute_time_ms": 1.93,
+    "planner_nodes_explored": 106,
+    "planner_path_length_m": 5.577,
+    "planner_smoothness_score": 0.697,
+    "min_obstacle_distance_m": 6.584,
+    "max_speed_m_s": 0.20334,
+    "buildings": [
+        {
+            "name": "BUILDING_A",
+            "x": -6.0,
+            "y": 0.0,
+            "r": 4.242640687119285
+        },
+        {
+            "name": "BUILDING_B",
+            "x": 0.0,
+            "y": 4.0,
+            "r": 4.242640687119285
+        },
+        {
+            "name": "BUILDING_C",
+            "x": 6.0,
+            "y": -4.0,
+            "r": 4.242640687119285
+        }
+    ],
+    "step_log": [
+        {
+            "step": 240,
+            "x": -17.53,
+            "y": -0.13,
+            "z": 9.99,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 250,
+            "x": -16.82,
+            "y": -0.95,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 260,
+            "x": -16.89,
+            "y": -2.02,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 270,
+            "x": -17.64,
+            "y": -2.72,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 280,
+            "x": -18.71,
+            "y": -3.48,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 290,
+            "x": -19.6,
+            "y": -4.87,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 300,
+            "x": -19.18,
+            "y": -6.75,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 310,
+            "x": -17.55,
+            "y": -7.78,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 320,
+            "x": -15.94,
+            "y": -7.41,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 330,
+            "x": -15.29,
+            "y": -6.37,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        },
+        {
+            "step": 340,
+            "x": -15.5,
+            "y": -5.56,
+            "z": 10.0,
+            "state": "NAVIGATE",
+            "trr_percent": 0.0,
+            "tracked_count": 0,
+            "proximity_warning": 0
+        }
+    ]
+}

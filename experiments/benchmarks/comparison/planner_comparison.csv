@@ -1,0 +1,2 @@
+planner,run_folder,success,planning_time_ms,mission_time_s,path_length_planned_m,total_distance_travelled_m,replan_count,collision_count,near_miss_count,min_obstacle_distance_m,average_speed_m_s,max_speed_m_s,nodes_explored,smoothness_score
+astar,run_001,True,1.93,2.8,5.577,24.617,1,0,80,6.584,8.792,0.20334,106,0.697
