@@ -1,0 +1,160 @@
+# Easy World Planner Benchmark Configuration
+# Sprint 1 — IFSP Hybrid Multi-UAV Swarm Project
+#
+# PURPOSE: Dedicated configuration for the Easy Benchmark World.
+#   - Do NOT edit environment_config.yaml for Easy World changes.
+#   - This file is loaded when CONFIG_FILE=configs/environment_easy.yaml
+#     is set in the environment (benchmark_runner.py sets this automatically).
+#   - environment_config.yaml (Downtown) remains completely unchanged.
+#
+# MISSION:  Start (-18, 0, 10)  ->  Goal (18, 0, 10)
+# WORLD:    worlds/easy_world.wbt
+# PLANNERS: astar | dijkstra | rrt  (selected via PLANNER_TYPE env var)
+
+project:
+  name: "Easy World Planner Benchmark"
+  version: "1.0"
+  sprint: "Sprint 1"
+  description: "Minimal stable world for planner development and debugging"
+
+webots:
+  version: "R2025a"
+  timestep: 8                  # ms — matches WorldInfo.basicTimeStep in easy_world.wbt
+  coordinate_system: "ENU"    # East=X, North=Y, Up=Z
+  webots_exe: "C:/Program Files/Webots/webots.exe"
+
+# ── Easy World scenario descriptor ────────────────────────────────────────────
+scenarios:
+  easy_world:
+    world_file: "worlds/easy_world.wbt"
+    description: "[Sprint 1] Minimal Easy Benchmark World — 3 buildings, clean visibility"
+    buildings: 3
+    crowd_agents: 0
+    uav_count: 1
+    patrol_altitude: 10.0
+    patrol_radius: 20.0
+    birds: 0
+    area_m2: 6400
+    mission_start:  [-18.0, 0.0, 10.0]
+    mission_target: [ 18.0, 0.0, 10.0]
+
+uav:
+  model: "Mavic2Pro"
+  count: 1
+  controller: "uav_swarm_controller"
+  motion_mode: "supervisor_teleport"
+
+# ── Baseline Navigation ────────────────────────────────────────────────────────
+# Controls the SingleDroneNavigation state machine in uav_swarm_controller.py.
+# The PLANNER_TYPE env var (set by benchmark_runner.py) overrides planner.type.
+
+baseline_navigation:
+  enabled: true
+  active_uav: 0
+
+  # ── Mission coordinates (Easy World) ────────────────────────────────────
+  start_position: [-18.0, 0.0, 10.0]   # ENU  (x, y, z)
+  target_position: [ 18.0, 0.0, 10.0]  # ENU  (x, y, z)
+
+  # No lawnmower sweep — direct Start→Goal for Easy World benchmark
+  sweep_targets: []
+
+  cruise_speed: 0.3           # m/step
+  arrival_radius: 3.0         # metres — declare ARRIVED when dist < this
+  altitude: 10.0              # m  — cruise altitude (small world, lower than downtown)
+  log_interval_steps: 100
+
+  safety_radius: 5.0          # distance from obstacle surface to begin avoidance
+  avoidance_strength: 1.5     # multiplier for obstacle repulsion vector
+  target_strength: 1.0        # multiplier for target attraction vector
+
+  # ── Planner Selection ───────────────────────────────────────────────────
+  # benchmark_runner.py overrides planner.type via PLANNER_TYPE env var.
+  planner:
+    type: "astar"             # default; overridden at runtime by benchmark_runner
+    astar:
+      heuristic: "euclidean"
+    dijkstra: {}
+    rrt:
+      max_iterations: 5000
+      step_size: 2.0
+      bidirectional: true
+
+  # ── Global Path Planner (Grid) ─────────────────────────────────────────
+  astar_enabled: true
+  grid_resolution: 2.0        # metres per grid cell
+  grid_margin: 25.0           # half-width of planning grid (±25 m covers 50x50 m area)
+  obstacle_inflation: 2.0     # extra metres added to building radii in grid
+  waypoint_radius: 2.5        # metres — advance to next WP when dist < this
+  show_waypoint_markers: true # spawn visual debug spheres in Webots
+
+  # ── Kinematic Flight Model ─────────────────────────────────────────────
+  max_velocity:     0.5       # m/step  — absolute speed cap
+  cruise_velocity:  0.3       # m/step  — nominal cruise speed
+  max_acceleration: 0.05      # m/step² — acceleration AND deceleration cap
+  max_turn_rate:    0.08      # rad/step — maximum yaw rotation per step
+  decel_radius:     8.0       # m       — start decelerating this many metres before WP
+
+  # ── Stabilisation Layer ─────────────────────────────────────────────────
+  emergency_radius:          4.0   # m — reactive avoidance ONLY inside this radius
+  yaw_smoothing_alpha:       0.2   # low-pass weight on desired_yaw each step
+  wp_damping_radius:         3.0   # m — apply velocity damping inside this radius
+  velocity_damping_factor:   0.92  # multiplier applied each step inside wp_damping_radius
+  waypoint_reach_lock_steps: 8     # steps to lock WP advance after reaching a WP
+
+  # ── Collision Safety Layer ─────────────────────────────────────────────
+  collision_safety:
+    enabled: true
+    planner_inflation_radius: 2.0   # used by planner grid rasterisation
+    safety_inflation_radius:  5.0   # world-space margin used by CollisionSafetyLayer
+    segment_samples:          30
+    segment_blocked_fallback: "nearest_free"
+    danger_radius:            8.0
+    repulsion_emergency_radius: 4.0
+    repulsion_strength:       2.5
+    repulsion_strength_warn:  0.8
+    repulsion_smoothing:      0.30
+    show_inflated_obstacles:  true  # translucent red rings at safety_inflation_radius
+    show_avoidance_vector:    true
+
+  # ── Local Avoidance Sensor ─────────────────────────────────────────────
+  local_avoidance:
+    enabled: true
+    sensor_distance: 14.0       # m — ray cast length
+    ray_samples:     20         # sample points per ray
+
+    # Blend weights (sum should be 1.0)
+    astar_weight:    0.65       # global planner direction contribution
+    avoidance_weight: 0.35      # local avoidance direction contribution
+
+    repulsion_falloff: 2.0
+    smoothing_alpha: 0.35
+    prediction_steps: 12
+    debug_rays: true
+    yellow_threshold: 0.60
+    red_threshold:    0.30
+    corridor_commit_steps: 12
+
+    slow_start_distance:  8.0
+    slow_mid_distance:    5.0
+    slow_near_distance:   3.0
+    slow_mid_scale:       0.80
+    slow_near_scale:      0.60
+    emergency_slow_scale: 0.45
+
+  # ── Benchmarking ────────────────────────────────────────────────────────
+  benchmarking:
+    enabled: true
+
+# ── RL disabled in Easy World ─────────────────────────────────────────────────
+rl:
+  enabled: false
+
+# ── Physics ─────────────────────────────────────────────────────────────────
+physics:
+  gravity: -9.806
+  wind:
+    enabled: false
+  uav_damping:
+    linear: 0.5
+    angular: 0.5

@@ -1,0 +1,178 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Asphalt.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/buildings/protos/SimpleBuilding.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  info [
+    "Easy Benchmark World — Sprint 1"
+    "Single-Drone Planner Benchmark Platform"
+    "Mission: (-18, 0, 10) -> (18, 0, 10)"
+    "3 buildings, no pedestrians, no birds, no traffic"
+    "Use this world for planner development and debugging"
+  ]
+  title "Easy Benchmark World — Planner Platform"
+  gravity -9.806
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+
+# ── Viewpoint: Top-down isometric — entire world visible at once ──────────────
+# Positioned above and behind the scene so Start (-18,0), Goal (18,0),
+# all 3 buildings, and the drone are always visible simultaneously.
+# followType "Tracking Shot" keeps the drone centred as it moves.
+DEF MAIN_VIEW Viewpoint {
+  orientation -0.57 0.71 0.41 1.18
+  position -10 -45 40
+  near 0.5
+  follow "UAV_0"
+  followType "Tracking Shot"
+  followSmoothness 0.12
+}
+
+TexturedBackground {
+  texture "noon_cloudy_countryside"
+  luminosity 1.2
+}
+
+TexturedBackgroundLight {
+  castShadows FALSE
+}
+
+# ── Ground ────────────────────────────────────────────────────────────────────
+# 80x80 m flat asphalt — comfortably contains the mission corridor
+Floor {
+  size 80 80
+  tileSize 4 4
+  appearance Asphalt {
+  }
+}
+
+# ── Buildings ─────────────────────────────────────────────────────────────────
+# Three 4-storey buildings placed in a staggered line between S and G.
+# Layout (top view, X right = East, Y up = North):
+#
+#   S(-18,0) ──────── [A](-6,0) ──── [B](0,4) ──── [C](6,-4) ──────── G(18,0)
+#
+# Each building footprint is 6x6 m (corners ±3, ±3).
+# Combined with obstacle_inflation=2.0 + safety_inflation=5.0 the planners
+# must route noticeably around each building.
+
+# Building A — sits directly on the corridor centreline
+DEF BUILDING_A SimpleBuilding {
+  translation -6 0 0
+  name "building_a"
+  floorHeight 3.0
+  floorNumber 4
+  corners [
+     3  3
+     3 -3
+    -3 -3
+    -3  3
+  ]
+  wallType "brick building"
+}
+
+# Building B — offset north of centreline
+DEF BUILDING_B SimpleBuilding {
+  translation 0 4 0
+  name "building_b"
+  floorHeight 3.0
+  floorNumber 4
+  corners [
+     3  3
+     3 -3
+    -3 -3
+    -3  3
+  ]
+  wallType "old office building"
+}
+
+# Building C — offset south of centreline
+DEF BUILDING_C SimpleBuilding {
+  translation 6 -4 0
+  name "building_c"
+  floorHeight 3.0
+  floorNumber 4
+  corners [
+     3  3
+     3 -3
+    -3 -3
+    -3  3
+  ]
+  wallType "concrete building"
+}
+
+# ── Start Marker ─────────────────────────────────────────────────────────────
+# Bright green emissive sphere at mission start position (X=-18, Y=0, Z=10).
+# Placed at cruise altitude so it is visible from the chase-cam and top-down view.
+DEF START_MARKER Solid {
+  translation -18 0 10
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.0 0.85 0.0
+          emissiveColor 0.0 1.0 0.0
+          transparency 0.15
+        }
+      }
+      geometry Sphere {
+        radius 0.6
+      }
+    }
+  ]
+  name "start_marker"
+  contactMaterial "default"
+  physics NULL
+}
+
+# ── Goal Marker ───────────────────────────────────────────────────────────────
+# Bright red emissive sphere at mission goal position (X=18, Y=0, Z=10).
+DEF GOAL_MARKER Solid {
+  translation 18 0 10
+  children [
+    Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 0.85 0.0 0.0
+          emissiveColor 1.0 0.0 0.0
+          transparency 0.15
+        }
+      }
+      geometry Sphere {
+        radius 0.6
+      }
+    }
+  ]
+  name "goal_marker"
+  contactMaterial "default"
+  physics NULL
+}
+
+# ── UAV_0 — spawned at ground level below Start ───────────────────────────────
+# The supervisor controller teleports UAV_0 to start_position during TAKEOFF.
+# Spawning slightly above ground (Z=0.5) prevents physics clipping on load.
+DEF UAV_0 Mavic2Pro {
+  translation -18 0 0.5
+  rotation 0 0 1 0
+  name "UAV_0"
+  controller "uav_camera"
+  customData "uav_id=0"
+}
+
+# ── Supervisor ────────────────────────────────────────────────────────────────
+# Reads environment_easy.yaml (via CONFIG_FILE env var set by benchmark_runner).
+# Runs SingleDroneNavigation with the selected planner (A* / Dijkstra / RRT).
+Robot {
+  name "swarm_supervisor"
+  controller "uav_swarm_controller"
+  supervisor TRUE
+}
