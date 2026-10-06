@@ -50,6 +50,13 @@ class PlannerBase(ABC):
             "smoothness_score": self.smoothness_score
         }
     
+    def get_snapped_start(self, start):
+        """
+        Return the snapped start position if it is inside obstacles.
+        Default implementation returns start position unchanged.
+        """
+        return start
+    
     def _compute_path_length(self, waypoints):
         """Helper: Compute total distance of path."""
         if len(waypoints) < 2:

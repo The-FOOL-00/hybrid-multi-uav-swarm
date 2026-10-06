@@ -33,6 +33,7 @@ if script_dir not in sys.path:
 from planners.astar_planner import AStarPlanner
 from planners.dijkstra_planner import DijkstraPlanner
 from planners.rrt_planner import RRTPlanner
+from planners.potential_field_planner import PotentialFieldPlanner
 
 
 
@@ -94,6 +95,11 @@ class CollisionSafetyLayer:
              "r": b["r"] + self.safety_inflation}
             for b in buildings
         ]
+        self.buildings_planner  = [
+            {"name": b["name"], "x": b["x"], "y": b["y"],
+             "r": b["r"] + self.planner_inflation}
+            for b in buildings
+        ]
 
         # Segment validation
         self.segment_samples    = int(cfg.get("segment_samples", 30))
@@ -143,31 +149,33 @@ class CollisionSafetyLayer:
         nearest_name = None
         bx, by = 0.0, 0.0
         for b in self.buildings_safe:
-            centre_dist = math.hypot(pos[0] - b["x"], pos[1] - b["y"])
-            surf = centre_dist - b["r"]
-            if surf < min_surf:
-                min_surf = surf
+            dist = math.hypot(pos[0] - b["x"], pos[1] - b["y"])
+            surface_dist = dist - b["r"]
+            if surface_dist < min_surf:
+                min_surf = surface_dist
                 nearest_name = b["name"]
                 bx, by = b["x"], b["y"]
         return nearest_name, min_surf, bx, by
 
-    def _point_blocked(self, x: float, y: float) -> bool:
-        """True if (x, y) is inside ANY safety-inflated building."""
-        for b in self.buildings_safe:
+    def _point_blocked(self, x: float, y: float, use_planner_inflation=False) -> bool:
+        """True if (x, y) is inside ANY inflated building."""
+        buildings = self.buildings_planner if use_planner_inflation else self.buildings_safe
+        for b in buildings:
             if math.hypot(x - b["x"], y - b["y"]) <= b["r"]:
                 return True
         return False
 
     # -- Public API -----------------------------------------------------------
 
-    def check_segment(self, p1, p2) -> bool:
+    def check_segment(self, p1, p2, use_planner_inflation=False) -> bool:
         """
         Sample ``segment_samples`` evenly-spaced points along the 2-D segment
-        p1 -> p2 and test each against the safety-inflated building footprints.
+        p1 -> p2 and test each against the safety-inflated or planner-inflated building footprints.
 
         Parameters
         ----------
         p1, p2 : sequence of at least 2 floats (x, y, ...)
+        use_planner_inflation : bool, whether to use smaller planner inflation radius (default: False)
 
         Returns
         -------
@@ -185,11 +193,11 @@ class CollisionSafetyLayer:
             t  = i / n
             sx = x1 + t * (x2 - x1)
             sy = y1 + t * (y2 - y1)
-            if self._point_blocked(sx, sy):
+            if self._point_blocked(sx, sy, use_planner_inflation):
                 return False
         return True
 
-    def nearest_safe_waypoint(self, drone_pos, blocked_wp) -> list:
+    def nearest_safe_waypoint(self, drone_pos, blocked_wp, use_planner_inflation=False) -> list:
         """
         Binary-search along drone_pos -> blocked_wp for the last safe point.
         Returns a world-space [x, y, z] fallback waypoint at 90 % of the
@@ -207,7 +215,7 @@ class CollisionSafetyLayer:
             mid = (lo + hi) / 2.0
             mx  = x1 + mid * (x2 - x1)
             my  = y1 + mid * (y2 - y1)
-            if self._point_blocked(mx, my):
+            if self._point_blocked(mx, my, use_planner_inflation):
                 hi = mid
             else:
                 lo = mid
@@ -999,6 +1007,7 @@ class SingleDroneNavigation:
 
         self.state       = self.STATE_GROUND_IDLE
         self.step_count  = 0
+        self.max_steps   = int(cfg.get("max_steps", 12000))
         self._spinup_counter = 0
         self.spinup_steps = 100
         self.takeoff_speed = 0.05
@@ -1034,12 +1043,15 @@ class SingleDroneNavigation:
         self.planner_type = planner_cfg.get("type", "astar")
         self.planner_hyperparams = planner_cfg.get(self.planner_type, {})
 
+        vis_cfg = cfg.get("visualization", {})
         self.astar_enabled   = bool(cfg.get("astar_enabled", True))
         self.grid_resolution = float(cfg.get("grid_resolution", 2.0))
         self.grid_margin     = float(cfg.get("grid_margin", 90.0))
         self.obstacle_inflation = float(cfg.get("obstacle_inflation", 2.0))
         self.waypoint_radius = float(cfg.get("waypoint_radius", 4.0))
-        self.show_wp_markers = bool(cfg.get("show_waypoint_markers", True))
+        self.show_wp_markers = bool(vis_cfg.get("show_waypoint_markers", cfg.get("show_waypoint_markers", True)))
+        self.marker_radius_wp = float(vis_cfg.get("marker_radius_wp", 0.6))
+        self.marker_radius_target = float(vis_cfg.get("marker_radius_target", 0.9))
 
         # Waypoint list  -  populated during first NAVIGATE step via _init_astar()
         self.waypoints          = []   # list of [x, y, z]
@@ -1050,7 +1062,7 @@ class SingleDroneNavigation:
         # ==================================================================
         # DEBUG / OBSERVABILITY STATE  (Tasks 1-6)
         # ==================================================================
-        self.debug_mode = True          # master switch for all debug visuals
+        self.debug_mode = bool(vis_cfg.get("show_debug_beacon", False))
 
         # Task 1  -  debug beacon above UAV_0
         self._beacon_node = None        # Webots Solid node reference
@@ -1070,9 +1082,9 @@ class SingleDroneNavigation:
         self._trail_positions   = []    # sampled drone positions
         self._trail_nodes       = []    # spawned Webots Solid nodes
         self._trail_counter     = 0     # steps since last sample
-        self._trail_interval    = 10    # sample every N steps
+        self._trail_interval    = int(vis_cfg.get("trail_interval_steps", 15))    # sample every N steps
         self._trail_max_nodes   = 600   # cap on spawned nodes
-        self._trail_radius      = 0.35  # sphere radius (metres)
+        self._trail_radius      = float(vis_cfg.get("trail_sphere_radius", 0.2))  # sphere radius (metres)
 
         # Task 6  -  ASCII minimap
         self._minimap_interval  = 200   # print minimap every N steps
@@ -1295,51 +1307,54 @@ class SingleDroneNavigation:
             self.planner = DijkstraPlanner(world_config, grid_config)
         elif self.planner_type == "rrt":
             self.planner = RRTPlanner(world_config, grid_config)
+        elif self.planner_type == "potential_field":
+            self.planner = PotentialFieldPlanner(world_config, grid_config)
         else:
             raise ValueError(f"Unknown planner type: {self.planner_type}")
             
         start_xy = (self.start_pos[0], self.start_pos[1])
+        snapped_start = self.planner.get_snapped_start(start_xy)
+        self.snapped_start = snapped_start
+        print(f"[{self.planner_type.upper()}] Start snapped from {start_xy} to {snapped_start}")
         
-        # Define lawnmower sweep key waypoints covering the full 200m x 200m world along street centerlines
-        sweep_targets = [
-            [-90.0, -80.0],
-            [90.0, -80.0],
-            [90.0, -40.0],
-            [-90.0, -40.0],
-            [-90.0, 0.0],
-            [90.0, 0.0],
-            [90.0, 40.0],
-            [-90.0, 40.0],
-            [-90.0, 80.0],
-            [90.0, 80.0],
-            [self.target_pos[0], self.target_pos[1]]
-        ]
+        # Teleport drone in Webots to the snapped start position to avoid starting inside obstacles
+        target_z = self.ground_spawn_z if self.state == self.STATE_GROUND_IDLE else self.altitude
+        self.uav_tf.setSFVec3f([snapped_start[0], snapped_start[1], target_z])
+        try:
+            self.uav_node.resetPhysics()
+        except Exception:
+            pass
 
-        print(f"[{self.planner_type.upper()}] Planning lawnmower sweep through checkpoints: {sweep_targets}")
-        
-        raw_wps = []
-        current_start = start_xy
-        for idx, target in enumerate(sweep_targets):
-            segment = self.planner.plan(current_start, target)
-            if segment:
-                raw_wps.extend(segment)
-                current_start = target
-            else:
-                print(f"[{self.planner_type.upper()}] Warning: leg to {target} failed planning  -  using straight-line fallback")
-                raw_wps.append(target)
-                current_start = target
+        # Direct single-target navigation from snapped start to mission target
+        goal_xy = (self.target_pos[0], self.target_pos[1])
+        print(f"[{self.planner_type.upper()}] Planning direct route from {snapped_start} to {goal_xy}...")
+
+        raw_wps = self.planner.plan(snapped_start, goal_xy)
+        if not raw_wps:
+            print(f"[{self.planner_type.upper()}] Warning: direct planning returned empty route  -  using target as fallback")
+            raw_wps = [goal_xy]
 
         # Convert (x, y) -> [x, y, z] with mission altitude
         self.waypoints = [[wx, wy, self.altitude] for wx, wy in raw_wps]
         self.current_wp_idx = 0
 
+        # Calculate initial yaw to face the first waypoint to prevent startup U-turns and wall collisions
+        if self.waypoints:
+            first_wp = self.waypoints[0]
+            dx = first_wp[0] - snapped_start[0]
+            dy = first_wp[1] - snapped_start[1]
+            if math.hypot(dx, dy) > 1e-4:
+                initial_yaw = math.atan2(dy, dx)
+                self.current_yaw = initial_yaw
+                self.uav_rf.setSFRotation([0.0, 0.0, 1.0, initial_yaw])
+
         # -- Task 2: Startup angle sanity check -------------------------------
-        # Compare angle (start->WP0) vs (start->first sweep target).
-        # If WP0 is more than 90deg off the first sweep direction, skip it.
+        # Compare angle (start->WP0) vs (start->mission goal).
+        # If WP0 is more than 90deg off the direct goal direction, skip it.
         # This prevents the drone doing a startup U-turn that causes jitter.
         if len(self.waypoints) > 1:
-            sx, sy = self.start_pos[0], self.start_pos[1]
-            gx, gy = sweep_targets[0][0], sweep_targets[0][1]
+            sx, sy = snapped_start[0], snapped_start[1]
+            gx, gy = goal_xy[0], goal_xy[1]
             w0x, w0y = self.waypoints[0][0], self.waypoints[0][1]
 
             # Direction vectors
@@ -1354,30 +1369,30 @@ class SingleDroneNavigation:
                 dot = max(-1.0, min(1.0, dot))   # clamp for acos safety
                 angle_deg = math.degrees(math.acos(dot))
                 if angle_deg > 90.0:
-                    print(f"[A*] Skipping unstable first waypoint "
-                          f"(angle to first sweep target: {angle_deg:.1f}deg > 90deg)")
+                    print(f"[{self.planner_type.upper()}] Skipping unstable first waypoint "
+                          f"(angle to mission goal: {angle_deg:.1f}deg > 90deg)")
                     self.waypoints.pop(0)
                 else:
-                    print(f"[A*] First waypoint OK (angle to first sweep target: {angle_deg:.1f}deg)")
+                    print(f"[{self.planner_type.upper()}] First waypoint OK (angle to mission goal: {angle_deg:.1f}deg)")
 
-        print(f"[A*] Waypoint plan ({len(self.waypoints)} waypoints):")
+        print(f"[{self.planner_type.upper()}] Waypoint plan ({len(self.waypoints)} waypoints):")
         for i, wp in enumerate(self.waypoints):
             marker = " <- FINAL TARGET" if i == len(self.waypoints) - 1 else ""
             print(f"  WP[{i:02d}] ({wp[0]:7.2f}, {wp[1]:7.2f}, {wp[2]:.1f}){marker}")
         print()
 
         # -- Collision Safety Layer: post-planning segment validation -----------
-        # A* can occasionally produce smoothed segments that clip a building
+        # Planners can occasionally produce smoothed segments that clip a building
         # corner at the grid-cell boundary.  Re-validate every consecutive WP
         # pair in world-space at the (larger) safety_inflation_radius.
         if self.safety_layer.enabled and len(self.waypoints) > 1:
             print("[CollisionSafety] Running post-plan segment validation...")
             fixed   = 0
-            prev_wp = [self.start_pos[0], self.start_pos[1], self.altitude]
+            prev_wp = [snapped_start[0], snapped_start[1], self.altitude]
             for i in range(len(self.waypoints)):
                 wp = self.waypoints[i]
-                if not self.safety_layer.check_segment(prev_wp, wp):
-                    fallback = self.safety_layer.nearest_safe_waypoint(prev_wp, wp)
+                if not self.safety_layer.check_segment(prev_wp, wp, use_planner_inflation=True):
+                    fallback = self.safety_layer.nearest_safe_waypoint(prev_wp, wp, use_planner_inflation=True)
                     print(f"  [CollisionSafety] Segment to WP[{i:02d}] BLOCKED  -  "
                           f"replaced with nearest-safe fallback "
                           f"({fallback[0]:.1f}, {fallback[1]:.1f})")
@@ -1392,7 +1407,7 @@ class SingleDroneNavigation:
         # Update path length and smoothness on the final post-validation path
         if hasattr(self, "planner") and self.planner is not None:
             waypoints_2d = [(wp[0], wp[1]) for wp in self.waypoints]
-            complete_path_2d = [(self.start_pos[0], self.start_pos[1])] + waypoints_2d
+            complete_path_2d = [snapped_start] + waypoints_2d
             self.planner.path_length_m = self.planner._compute_path_length(complete_path_2d)
             self.planner.smoothness_score = self.planner._compute_smoothness(complete_path_2d)
 
@@ -1415,21 +1430,21 @@ class SingleDroneNavigation:
 
     def _spawn_waypoint_markers(self):
         """
-        Spawn improved waypoint markers (Task 4):
-          - Bigger spheres (radius 1.5 vs 1.0)
+        Spawn clean waypoint markers for demo:
+          - Spheres sized by marker_radius_wp (0.6m) and marker_radius_target (0.9m)
           - Bright yellow intermediate, bright green final
-          - Strong emissive glow so markers are visible from far away
+          - Strong emissive glow so markers are visible cleanly
           - Floated +1 m above the waypoint altitude
-          - Numbered console printout per waypoint
         Uses supervisor importMFNodeFromString  -  gracefully skips on any error.
         """
-        print("[WP Markers] Spawning improved waypoint markers:")
+        print("[WP Markers] Spawning clean waypoint markers:")
         try:
             root = self.supervisor.getRoot()
             children_field = root.getField("children")
             total = len(self.waypoints)
             for i, wp in enumerate(self.waypoints):
                 is_final = (i == total - 1)
+                radius = self.marker_radius_target if is_final else self.marker_radius_wp
                 if is_final:
                     # Bright green  -  final target
                     r, g, b  = 0.0, 1.0, 0.15
@@ -1456,7 +1471,7 @@ class SingleDroneNavigation:
                     f'          shininess 0.9\n'
                     f'        }}\n'
                     f'      }}\n'
-                    f'      geometry Sphere {{ radius 1.5 }}\n'
+                    f'      geometry Sphere {{ radius {radius} }}\n'
                     f'    }}\n'
                     f'  ]\n'
                     f'  name "astar_wp_{i}"\n'
@@ -1465,9 +1480,8 @@ class SingleDroneNavigation:
                     f'}}\n'
                 )
                 children_field.importMFNodeFromString(-1, node_str)
-                # Numbered debug print (Task 4 requirement)
                 print(f"  WP[{i}]  ({wp[0]:7.2f}, {wp[1]:7.2f}, {wp[2]:.1f})  "
-                      f"[{label}]")
+                      f"[{label}] (radius={radius}m)")
 
             print(f"[WP Markers] {total} markers spawned  "
                   f"(yellow=intermediate, green=final).")
@@ -1989,6 +2003,19 @@ class SingleDroneNavigation:
         """
         self.step_count += 1
 
+        if self.step_count >= self.max_steps:
+            if not self.arrived_reported:
+                print(f"\n[SingleDroneNav] TIMEOUT: Mission exceeded maximum steps ({self.max_steps}). Exiting.")
+                self.reached_target = False
+                self._save_metrics()
+                self.arrived_reported = True
+                if os.environ.get("WEBOTS_HEADLESS", "false").lower() == "true":
+                    print("[HEADLESS] Exiting Webots automatically due to timeout.")
+                    self.supervisor.simulationQuit(1)
+                    return True
+                self.state = self.STATE_ARRIVED
+            return True
+
         # Suppress UAV_1-4 every step (keeps propeller thrust from lifting them)
         self._suppress_inactive_uavs()
 
@@ -2029,16 +2056,25 @@ class SingleDroneNavigation:
         # -- STATE: GROUND_IDLE -----------------------------------------
         if self.state == self.STATE_GROUND_IDLE:
             if self._spinup_counter == 0:
+                # Lazy A* init  -  runs once on the very first step of GROUND_IDLE
+                if self.astar_enabled and not self.astar_initialized:
+                    self._init_astar()
+                    return True
+
+                start_x, start_y = self.start_pos[0], self.start_pos[1]
+                if hasattr(self, "snapped_start") and self.snapped_start is not None:
+                    start_x, start_y = self.snapped_start[0], self.snapped_start[1]
+
                 # Place at start pos but on the ground
-                self.uav_tf.setSFVec3f([self.start_pos[0], self.start_pos[1], self.ground_spawn_z])
-                self.uav_rf.setSFRotation([0.0, 0.0, 1.0, 0.0])  # face East
+                self.uav_tf.setSFVec3f([start_x, start_y, self.ground_spawn_z])
+                self.uav_rf.setSFRotation([0.0, 0.0, 1.0, self.current_yaw])
                 try:
                     self.uav_node.resetPhysics()
                 except Exception:
                     pass
                 print(f"[SingleDroneNav] STATE: GROUND_IDLE (spin-up {self.spinup_steps} steps)")
                 print(f"  Target               : {self.target_pos}")
-                total_dist = self._dist3(self.start_pos, self.target_pos)
+                total_dist = self._dist3([start_x, start_y, self.ground_spawn_z], self.target_pos)
                 print(f"  Total mission dist   : {total_dist:.1f} m")
                 
             self._spinup_counter += 1
@@ -2070,6 +2106,7 @@ class SingleDroneNavigation:
             # Lazy A* init  -  runs once on the very first NAVIGATE step
             if self.astar_enabled and not self.astar_initialized:
                 self._init_astar()
+                return True
 
             dist_to_target = self._dist3(cur, self.target_pos)
 
@@ -2102,31 +2139,34 @@ class SingleDroneNavigation:
                         candidate_idx = self.current_wp_idx + 1
                         candidate_wp  = self.waypoints[candidate_idx]
 
-                        # -- Safety layer segment check before advancing ------
-                        # Verify the segment cur -> candidate_wp is clear at the
-                        # safety_inflation_radius BEFORE committing to the advance.
-                        seg_clear = self.safety_layer.check_segment(cur, candidate_wp)
+                        seg_clear = self.safety_layer.check_segment(cur, candidate_wp, use_planner_inflation=True)
+                        should_advance = True
                         if not seg_clear:
-                            fallback = self.safety_layer.nearest_safe_waypoint(
-                                cur, candidate_wp
-                            )
-                            print(f"  [CollisionSafety] WP advance to WP[{candidate_idx:02d}] "
-                                  f"BLOCKED  -  replacing with nearest-safe fallback "
-                                  f"({fallback[0]:.1f}, {fallback[1]:.1f})  "
-                                  f"step={self.step_count}")
-                            # Replace candidate with fallback to avoid feedback loop insertion
-                            self.waypoints[candidate_idx] = fallback
-                            candidate_wp = fallback
-                            self.replan_count += 1
+                            if dist_to_wp > 1.0:
+                                # Do not advance early; keep flying toward current WP to round the corner properly
+                                should_advance = False
+                            else:
+                                fallback = self.safety_layer.nearest_safe_waypoint(
+                                    cur, candidate_wp, use_planner_inflation=True
+                                )
+                                print(f"  [CollisionSafety] WP advance to WP[{candidate_idx:02d}] "
+                                      f"BLOCKED  -  replacing with nearest-safe fallback "
+                                      f"({fallback[0]:.1f}, {fallback[1]:.1f})  "
+                                      f"step={self.step_count}")
+                                # Replace candidate with fallback to avoid feedback loop insertion
+                                self.waypoints[candidate_idx] = fallback
+                                candidate_wp = fallback
+                                self.replan_count += 1
 
-                        self.current_wp_idx += 1
-                        new_wp = self.waypoints[self.current_wp_idx]
-                        self._wp_lock_counter = self.waypoint_reach_lock_steps
-                        print(f"  [A*] WP[{prev_idx:02d}] reached -> advancing to "
-                              f"WP[{self.current_wp_idx:02d}] "
-                              f"({new_wp[0]:.1f}, {new_wp[1]:.1f})  "
-                              f"step={self.step_count}")
-                        print(f"  [WP_LOCK] Active for {self._wp_lock_counter} steps")
+                        if should_advance:
+                            self.current_wp_idx += 1
+                            new_wp = self.waypoints[self.current_wp_idx]
+                            self._wp_lock_counter = self.waypoint_reach_lock_steps
+                            print(f"  [A*] WP[{prev_idx:02d}] reached -> advancing to "
+                                  f"WP[{self.current_wp_idx:02d}] "
+                                  f"({new_wp[0]:.1f}, {new_wp[1]:.1f})  "
+                                  f"step={self.step_count}")
+                            print(f"  [WP_LOCK] Active for {self._wp_lock_counter} steps")
                     else:
                         # Reached the final waypoint in the list!
                         print(f"  [A*] Reached final waypoint WP[{self.current_wp_idx:02d}]  -  declaring mission complete. step={self.step_count}")

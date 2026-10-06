@@ -1,309 +1,234 @@
-# Multi-UAV Surveillance Research Configuration
-# STIRS-2025 | SSN College of Engineering
-# Project: Attention-Guided Decentralized Multi-UAV Surveillance
-#          for Real-Time Crowd Monitoring in Smart Cities using POMDP
-#
-# NOTE: This file is the canonical copy in configs/.
-
-project:
-  name: "Attention-Guided Multi-UAV Surveillance"
-  version: "1.0"
-  researchers: ["Sharruk S", "Sundareswaran", "Jeswin Joel"]
-  guide: "Dr. E. Selvam"
-  institution: "SSN College of Engineering"
-
-webots:
-  version: "R2025a"
-  # Target timestep: 16ms (2× previous 8ms) for improved training efficiency.
-  # NOTE: Actual simulation timestep is set in each world's WorldInfo.basicTimeStep
-  # node inside the .wbt file — this YAML value is for documentation only.
-  # To apply 16ms: open each .wbt in Webots, set WorldInfo { basicTimeStep 16 },
-  # then verify simulation stability before committing.
-  timestep: 16                 # ms (target; currently 8ms in .wbt files)
-  coordinate_system: "ENU"     # East=X, North=Y, Up=Z
-  webots_exe: "C:/Program Files/Webots/webots.exe"
-
-scenarios:
-  downtown:
-    world_file: "worlds/downtown.wbt"
-    description: "Dense urban with high-rise buildings and 3x3 road grid"
-    buildings: 15
-    crowd_agents: 15
-    uav_count: 5
-    patrol_altitude: 15.0      # metres (ENU Z)
-    patrol_radius: 45.0
-    birds: 8
-    area_m2: 40000
-
-  single_drone:
-    world_file: "worlds/single_drone_downtown.wbt"
-    description: "[DEV] Single-drone nav+avoidance dev world — identical downtown minus UAV_1-4"
-    buildings: 15
-    crowd_agents: 15
-    uav_count: 1               # UAV_0 only; UAV_1-4 removed from world file
-    patrol_altitude: 15.0
-    patrol_radius: 45.0
-    birds: 8
-    area_m2: 40000
-    mission_start:  [-40.0, 48.0, 15.0]
-    mission_target: [ 50.0, 48.0, 15.0]
-
-  event:
-    world_file: "worlds/event.wbt"
-    description: "Dense crowd gathering in central 50x50m plaza"
-    buildings: 5
-    crowd_agents: 40
-    uav_count: 5
-    patrol_altitude: 12.0
-    patrol_radius: 15.0
-    birds: 8
-    area_m2: 25600
-
-  residential:
-    world_file: "worlds/residential.wbt"
-    description: "Low-density neighborhood with parks and curved roads"
-    buildings: 8
-    crowd_agents: 8
-    uav_count: 5
-    patrol_altitude: 10.0
-    patrol_radius: 15.0
-    birds: 6
-    area_m2: 25600
-
-  mixed:
-    world_file: "worlds/mixed.wbt"
-    description: "Mixed commercial (offices/shops) and residential zones"
-    buildings: 14
-    crowd_agents: 35
-    uav_count: 5
-    patrol_altitude: 15.0
-    patrol_radius: 20.0
-    birds: 8
-    area_m2: 32400
-
-  industrial:
-    world_file: "worlds/industrial.wbt"
-    description: "Industrial port with stacked shipping containers and warehouses"
-    buildings: 2
-    crowd_agents: 10
-    uav_count: 5
-    patrol_altitude: 12.0
-    patrol_radius: 18.0
-    birds: 5
-    area_m2: 32400
-
-uav:
-  model: "Mavic2Pro"
-  count: 5
-  formation: "circular_staggered"
-  controller: "uav_swarm_controller"
-  motion_mode: "supervisor_teleport"  # direct translation via Supervisor API
-
-pomdp:
-  observation_radius: 12.0     # metres
-  attention_alpha: 0.15        # crowd-centroid pull weight
-  coverage_cell_size: 5.0      # metres
-  reward_coverage_weight: 0.6
-  reward_tracking_weight: 0.4
-
-physics:
-  gravity: -9.806
-  wind:
-    enabled: false             # enable via WorldInfo physics plugin
-    base_speed: 2.0
-    direction: [1.0, 0.0, 0.5]
-    turbulence: 0.3
-  uav_damping:
-    linear: 0.5
-    angular: 0.5
-
-crowd:
-  walk_speed_min: 0.8
-  walk_speed_max: 1.6
-  pedestrian_height_z: 1.27   # ENU Z of pedestrian center at ground
-  state_machine: true
-  states: ["WALK", "WAIT", "GATHER"]
-
-birds:
-  altitude_min: 4.0
-  altitude_max: 12.0
-  orbit_radius_base: 10.0
-  speed_rad_per_s: 0.25
-  controller: "bird_controller"
-
-logging:
-  output_dir: "experiments/logs/"
-  metrics_interval_steps: 125
-  metrics:
-    - coverage_percent
-    - crowd_agents_in_fov
-    - active_uavs
-    - uav_positions
-
-# ── RL Training Parameters ───────────────────────────────────────────────
-# ── Baseline navigation (single-drone phase) ────────────────────────────
-# Set baseline_navigation.enabled: true  AND  rl.enabled: false
-# to run the deterministic start→target navigation baseline.
 baseline_navigation:
+  active_uav: 0
+  altitude: 15.0
+  arrival_radius: 3.0
+  astar_enabled: true
+  avoidance_strength: 1.5
+  collision_safety:
+    danger_radius: 2.5
+    enabled: true
+    planner_inflation_radius: 2.5
+    repulsion_emergency_radius: 1.0
+    repulsion_smoothing: 0.3
+    repulsion_strength: 1.5
+    repulsion_strength_warn: 0.4
+    safety_inflation_radius: 2.5
+    segment_blocked_fallback: nearest_free
+    segment_samples: 30
+    show_avoidance_vector: true
+    show_inflated_obstacles: false
+  cruise_speed: 0.04
+  cruise_velocity: 0.04
+  decel_radius: 5.0
+  emergency_radius: 3.0
   enabled: true
-  active_uav: 0                # only UAV_0 moves; UAV_1-4 are frozen
-  start_position: [-40.0, 48.0, 15.0]   # ENU  (x, y, z)
-  target_position: [50.0, 48.0, 15.0]  # ENU  (x, y, z)
-  cruise_speed: 0.3            # m/step — smooth visual motion (~285 steps across 85m)
-  arrival_radius: 3.0          # metres — declare ARRIVED when dist < this
-  altitude: 15.0               # m  — constant cruise altitude
-  log_interval_steps: 100      # console log every N steps
-  safety_radius: 5.0           # distance from obstacle surface to begin avoidance
-  avoidance_strength: 1.5      # multiplier for obstacle repulsion vector
-  target_strength: 1.0         # multiplier for target attraction vector
-
-  # ── Modular Path Planner Selection ────────────────────────────────────
+  grid_margin: 90.0
+  grid_resolution: 2.0
+  local_avoidance:
+    astar_weight: 0.65
+    avoidance_weight: 0.35
+    corridor_commit_steps: 12
+    debug_rays: true
+    emergency_slow_scale: 0.45
+    enabled: true
+    prediction_steps: 12
+    ray_samples: 20
+    red_threshold: 0.3
+    repulsion_falloff: 2.0
+    sensor_distance: 14.0
+    slow_mid_distance: 5.0
+    slow_mid_scale: 0.8
+    slow_near_distance: 3.0
+    slow_near_scale: 0.6
+    slow_start_distance: 8.0
+    smoothing_alpha: 0.35
+    yellow_threshold: 0.6
+  log_interval_steps: 100
+  max_acceleration: 0.005
+  max_steps: 12000
+  max_turn_rate: 0.03
+  max_velocity: 0.06
+  obstacle_inflation: 2.5
   planner:
-    type: "astar"  # Options: astar, dijkstra, rrt, potential_field
     astar:
-      heuristic: "euclidean"
-    dijkstra:
-      # No hyperparams needed
-    rrt:
-      max_iterations: 5000
-      step_size: 2.0
-      bidirectional: true
+      heuristic: euclidean
+    dijkstra: null
     potential_field:
       attractive_gain: 1.0
-      repulsive_gain: 15.0
-      influence_distance: 15.0
       goal_threshold: 1.0
+      influence_distance: 15.0
       max_steps: 1000
-
-  # ── A* Global Path Planner ────────────────────────────────────────────
-  astar_enabled: true          # false = fall back to reactive avoidance only
-  grid_resolution: 2.0         # metres per grid cell  (smaller = finer, slower)
-  grid_margin: 90.0            # half-width of grid world (cells from -90 to +90 m)
-  obstacle_inflation: 2.0      # extra metres added to building radii when marking cells
-  waypoint_radius: 2.5         # metres — advance to next waypoint when dist < this
-  show_waypoint_markers: true  # spawn visual debug Solid spheres in Webots
-
-  # ── Kinematic Flight Model ───────────────────────────────────────────
-  max_velocity:     0.5      # m/step  — absolute speed cap
-  cruise_velocity:  0.3      # m/step  — nominal cruise speed (overrides cruise_speed)
-  max_acceleration: 0.05     # m/step² — acceleration AND deceleration cap
-  max_turn_rate:    0.08     # rad/step — maximum yaw rotation per step
-  decel_radius:     8.0      # m       — start decelerating this many metres before WP
-
-  # ── Stabilisation Layer ───────────────────────────────────────────
-  # Fix shaking/jitter without touching architecture or A*.
-  emergency_radius:          4.0   # m — reactive avoidance ONLY inside this radius
-                                       #     A* alone controls outside this zone
-  yaw_smoothing_alpha:       0.2   # low-pass weight on desired_yaw each step
-                                       #     0.0=frozen, 1.0=instant (no filtering)
-  wp_damping_radius:         3.0   # m — apply velocity damping inside this radius
-  velocity_damping_factor:   0.92  # multiplier applied each step inside wp_damping_radius
-  waypoint_reach_lock_steps: 8     # steps to lock WP advance after reaching a WP
-                                       #     prevents flip-flop oscillation at WP boundary
-
-  # ── Collision Safety Layer ────────────────────────────────────────
-  # Emergency fail-safe only — primary avoidance is now LocalAvoidanceSensor.
-  # Does NOT modify A* or kinematic parameters — purely additive.
-  collision_safety:
-    enabled: true
-
-    # Dual inflation radii (metres added to each building's geometric radius)
-    planner_inflation_radius: 2.0   # used by A* grid rasterisation (same as obstacle_inflation)
-    safety_inflation_radius:  5.0   # larger world-space margin used by CollisionSafetyLayer
-
-    # Segment collision validation
-    # Before the drone commits to current_pos → next_waypoint, the segment
-    # is sampled at `segment_samples` evenly-spaced points and tested against
-    # safety_inflation_radius.  A blocked segment triggers a fallback.
-    segment_samples:          30    # number of sample points along segment
-    segment_blocked_fallback: "nearest_free"   # "nearest_free" or "skip"
-
-    # Emergency local avoidance state machine
-    # SAFE     : dist_to_surface > danger_radius   — A* steers, no repulsion
-    # WARNING  : danger_radius >= dist > emergency_radius  — half repulsion
-    # EMERGENCY: dist <= emergency_radius  — full repulsion override
-    danger_radius:            8.0   # m from building surface → WARNING state
-    repulsion_emergency_radius: 4.0 # m from building surface → EMERGENCY state
-    repulsion_strength:       2.5   # multiplier for repulsion blend in EMERGENCY
-    repulsion_strength_warn:  0.8   # multiplier for repulsion blend in WARNING
-    repulsion_smoothing:      0.30  # low-pass alpha on repulsion vector (0=frozen, 1=instant)
-                                    # keeps vector smooth — prevents oscillation/shaking
-
-    # Debug visualization (Webots scene)
-    show_inflated_obstacles:  true  # spawn translucent red rings at safety_inflation_radius
-    show_avoidance_vector:    true  # print avoidance vector magnitude in HUD
-
-  # ── Local Avoidance Sensor (drone-centered, Phase-1) ─────────────
-  # PRIMARY collision avoidance layer — 8 geometric rays cast from drone.
-  # Blends with A* direction: final = astar_weight*A* + avoidance_weight*avoid
-  # CollisionSafetyLayer above retained as last-resort emergency fail-safe only.
-  # Architecture modular — upgrade to real Webots sensors in Phase-2 without
-  # touching A* or kinematic model.
-  local_avoidance:
-    enabled: true
-    sensor_distance: 14.0       # m — ray cast length (increased 10→14 for earlier detection)
-    ray_samples:     20         # sample points per ray (higher = finer hit detection)
-
-    # Blend weights (astar_weight + avoidance_weight should sum to 1.0)
-    # Increased avoidance weight 0.25→0.35 so avoidance is strong enough to prevent clipping
-    astar_weight:    0.65       # A* global direction contribution
-    avoidance_weight: 0.35      # local avoidance direction contribution
-
-    # Repulsion intensity — power-law falloff: weight = (1 - hit_frac)^falloff
-    # Higher falloff = stronger reaction near obstacle, weaker reaction at range
-    repulsion_falloff: 2.0
-
-    # Low-pass filter on avoidance vector (prevents jitter/oscillation)
-    # 0.0 = frozen (no reaction), 1.0 = instant (no smoothing)
-    smoothing_alpha: 0.35
-
-    # Predictive avoidance: also cast rays from a forward-projected position
-    # future_pos = current_pos + velocity * prediction_steps
-    # Blends current + predicted raycasts so buildings are detected earlier.
-    prediction_steps: 12        # steps to project ahead (configurable, 0 = disabled)
-
-    # Debug visualization — colored ray-tip spheres in Webots scene
-    debug_rays: true
-
-    # Color thresholds (based on hit_fraction = hit_step / ray_samples)
-    # hit_fraction=0 = obstacle at drone, 1.0 = clear
-    yellow_threshold: 0.60      # hit_fraction < this → yellow (nearby)
-    red_threshold:    0.30      # hit_fraction < this → red (blocked/close)
-
-    # ── Corner corridor commitment (additive fix for rectangular buildings) ──
-    # When the front ray is blocked AND exactly one front-side ray is clear,
-    # lock the avoidance direction for this many steps instead of re-evaluating
-    # every frame.  Prevents left-right indecision at building corners.
-    # Range: 10–15.  Higher = more committed, may over-steer on tight turns.
-    corridor_commit_steps: 12   # steps to hold committed direction
-
-    # ── Near-wall speed reduction (additive fix) ─────────────────────────────
-    # Gradually slow the drone when the nearest sensor hit is close.
-    # Gives local avoidance more time to react before a corner is reached.
-    # Distance thresholds (metres from drone to nearest hit):
-    slow_start_distance:  8.0   # m — begin scaling down from full speed
-    slow_mid_distance:    5.0   # m — apply slow_mid_scale
-    slow_near_distance:   3.0   # m — apply slow_near_scale
-    # Speed multipliers (fraction of desired speed at each threshold):
-    slow_mid_scale:       0.80  # 80 % speed at slow_mid_distance
-    slow_near_scale:      0.60  # 60 % speed at slow_near_distance
-    emergency_slow_scale: 0.45  # 45 % speed below slow_near_distance
-
-
+      repulsive_gain: 15.0
+    rrt:
+      bidirectional: true
+      max_iterations: 5000
+      step_size: 2.0
+    type: astar
+  safety_radius: 5.0
+  show_waypoint_markers: true
+  start_position:
+  - -40.0
+  - -40.0
+  - 15.0
+  target_position:
+  - 40.0
+  - 40.0
+  - 15.0
+  target_strength: 1.0
+  velocity_damping_factor: 0.92
+  visualization:
+    marker_radius_target: 0.9
+    marker_radius_wp: 0.6
+    show_debug_beacon: false
+    show_waypoint_markers: true
+    trail_interval_steps: 15
+    trail_sphere_radius: 0.2
+  waypoint_radius: 2.5
+  waypoint_reach_lock_steps: 8
+  wp_damping_radius: 2.0
+  yaw_smoothing_alpha: 0.2
+birds:
+  altitude_max: 12.0
+  altitude_min: 4.0
+  controller: bird_controller
+  orbit_radius_base: 10.0
+  speed_rad_per_s: 0.25
+crowd:
+  pedestrian_height_z: 1.27
+  state_machine: true
+  states:
+  - WALK
+  - WAIT
+  - GATHER
+  walk_speed_max: 1.6
+  walk_speed_min: 0.8
+logging:
+  metrics:
+  - coverage_percent
+  - crowd_agents_in_fov
+  - active_uavs
+  - uav_positions
+  metrics_interval_steps: 125
+  output_dir: experiments/logs/
+physics:
+  gravity: -9.806
+  uav_damping:
+    angular: 0.5
+    linear: 0.5
+  wind:
+    base_speed: 2.0
+    direction:
+    - 1.0
+    - 0.0
+    - 0.5
+    enabled: false
+    turbulence: 0.3
+pomdp:
+  attention_alpha: 0.15
+  coverage_cell_size: 5.0
+  observation_radius: 12.0
+  reward_coverage_weight: 0.6
+  reward_tracking_weight: 0.4
+project:
+  guide: Dr. E. Selvam
+  institution: SSN College of Engineering
+  name: Attention-Guided Multi-UAV Surveillance
+  researchers:
+  - Sharruk S
+  - Sundareswaran
+  - Jeswin Joel
+  version: '1.0'
 rl:
-  enabled: false              # TEMPORARILY DISABLED for single-drone baseline
-                              # Re-enable: set to true (also set baseline_navigation.enabled: false)
-  algorithm: "PPO"             # planned: PPO, MAPPO
+  algorithm: PPO
+  enabled: false
   episodes: 1000
-  # Episode horizon increased from 1000 → 5000 steps for meaningful exploration.
-  # At 8ms/step: 5000 × 8ms = 40s real sim time per episode.
-  # At 16ms/step (target): 5000 × 16ms = 80s real sim time per episode.
-  max_steps_per_episode: 5000
-  learning_rate: 3.0e-4
   gamma: 0.99
+  learning_rate: 0.0003
+  max_steps_per_episode: 5000
   reward_weights:
-    coverage:          0.6    # CoverageReward weight   (positive)
-    tracking:          0.4    # TrackingReward weight   (positive)
-    collision_penalty: -1.0   # CollisionPenalty weight (negated in code via abs())
-    overlap_penalty:   0.3    # OverlapPenalty weight   (positive, penalty is negative)
-    separation_reward: 0.05   # SeparationReward weight (positive)
+    collision_penalty: -1.0
+    coverage: 0.6
+    overlap_penalty: 0.3
+    separation_reward: 0.05
+    tracking: 0.4
+scenarios:
+  downtown:
+    area_m2: 40000
+    birds: 8
+    buildings: 15
+    crowd_agents: 15
+    description: Dense urban with high-rise buildings and 3x3 road grid
+    patrol_altitude: 15.0
+    patrol_radius: 45.0
+    uav_count: 5
+    world_file: worlds/downtown.wbt
+  event:
+    area_m2: 25600
+    birds: 8
+    buildings: 5
+    crowd_agents: 40
+    description: Dense crowd gathering in central 50x50m plaza
+    patrol_altitude: 12.0
+    patrol_radius: 15.0
+    uav_count: 5
+    world_file: worlds/event.wbt
+  industrial:
+    area_m2: 32400
+    birds: 5
+    buildings: 2
+    crowd_agents: 10
+    description: Industrial port with stacked shipping containers and warehouses
+    patrol_altitude: 12.0
+    patrol_radius: 18.0
+    uav_count: 5
+    world_file: worlds/industrial.wbt
+  mixed:
+    area_m2: 32400
+    birds: 8
+    buildings: 14
+    crowd_agents: 35
+    description: Mixed commercial (offices/shops) and residential zones
+    patrol_altitude: 15.0
+    patrol_radius: 20.0
+    uav_count: 5
+    world_file: worlds/mixed.wbt
+  residential:
+    area_m2: 25600
+    birds: 6
+    buildings: 8
+    crowd_agents: 8
+    description: Low-density neighborhood with parks and curved roads
+    patrol_altitude: 10.0
+    patrol_radius: 15.0
+    uav_count: 5
+    world_file: worlds/residential.wbt
+  single_drone:
+    area_m2: 40000
+    birds: 8
+    buildings: 8
+    crowd_agents: 15
+    description: "[DEMO] Single-drone obstacle navigation showcase \xE2\u20AC\u201D\
+      \ 8 buildings"
+    mission_start:
+    - -40.0
+    - -40.0
+    - 15.0
+    mission_target:
+    - 40.0
+    - 40.0
+    - 15.0
+    patrol_altitude: 15.0
+    patrol_radius: 45.0
+    uav_count: 1
+    world_file: worlds/single_drone_downtown.wbt
+uav:
+  controller: uav_swarm_controller
+  count: 5
+  formation: circular_staggered
+  model: Mavic2Pro
+  motion_mode: supervisor_teleport
+webots:
+  coordinate_system: ENU
+  timestep: 16
+  version: R2025a
+  webots_exe: C:/Program Files/Webots/webots.exe

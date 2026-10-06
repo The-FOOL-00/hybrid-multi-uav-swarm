@@ -35,6 +35,12 @@ class AStarPlanner(PlannerBase):
               f"({self.resolution}m/cell) | {blocked}/{total_cells} blocked "
               f"| world +/-{self.grid_margin}m")
               
+    def get_snapped_start(self, start):
+        """Find the nearest free cell and return its world coordinate."""
+        col, row = self._world_to_grid(start)
+        col_f, row_f = self._nearest_free(col, row)
+        return self._grid_to_world((col_f, row_f))
+
     def _build_grid(self) -> list:
         """Return a 2-D list[row][col] of booleans (True = obstacle)."""
         grid = [[False] * self.cols for _ in range(self.rows)]

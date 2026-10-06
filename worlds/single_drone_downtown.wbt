@@ -44,8 +44,8 @@ WorldInfo {
 # followType "Tracking Shot" makes Webots automatically track UAV_0 as it moves.
 # followSmoothness 0.15 gives a tighter, more responsive camera than the default.
 DEF MAIN_VIEW Viewpoint {
-  orientation -0.35 0.87 0.35 1.28
-  position -70 20 35
+  orientation -0.32 0.88 0.35 1.30
+  position -65 -35 28
   near 0.5
   follow "UAV_0"
   followType "Tracking Shot"
@@ -173,147 +173,118 @@ CrossRoadsTrafficLight {
   translation 40 40 0
   name "tl_ne"
 }
-# ── Buildings — all kept for realistic obstacle environment ────────────────────
+# ── Buildings — 8 well-proportioned buildings with wide street corridors ────────
+# North-East block
 SimpleBuilding {
-  translation 24 58 0
-  name "tower_a"
+  translation 25 55 0
+  name "tower_ne"
   floorHeight 3.2
-  floorNumber 15
+  floorNumber 14
   corners [
-    8 12
-    8 -12
-    -8 -12
-    -8 12
+    6 6
+    6 -6
+    -6 -6
+    -6 6
   ]
   wallType "glass highrise"
 }
+# North-West block
 SimpleBuilding {
-  translation 36 48 0
-  name "tower_b"
+  translation -25 55 0
+  name "tower_nw"
   floorHeight 3.2
-  floorNumber 12
+  floorNumber 10
   corners [
-    7 10
-    7 -10
-    -7 -10
-    -7 10
+    6 6
+    6 -6
+    -6 -6
+    -6 6
   ]
   wallType "transparent highrise"
 }
+# Mid-North-East block (Central Obstacle)
 SimpleBuilding {
-  translation 24 46 0
-  name "tower_c"
-  floorHeight 3.5
-  floorNumber 10
+  translation 25 15 0
+  name "office_mid_e"
+  floorHeight 3.2
+  floorNumber 8
   corners [
-    6 8
-    6 -8
-    -6 -8
-    -6 8
+    6 6
+    6 -6
+    -6 -6
+    -6 6
   ]
   wallType "blue glass building"
 }
+# Mid-North-West block (Central Obstacle)
 SimpleBuilding {
-  translation -26 60 0
-  name "office_nw1"
-  floorNumber 8
+  translation -25 15 0
+  name "office_mid_w"
+  floorHeight 3.0
+  floorNumber 7
   corners [
-    10 12
-    10 -12
-    -10 -12
-    -10 12
-  ]
-}
-SimpleBuilding {
-  translation -36 48 0
-  name "office_nw2"
-  floorNumber 6
-  corners [
-    8 8
-    8 -8
-    -8 -8
-    -8 8
+    6 6
+    6 -6
+    -6 -6
+    -6 6
   ]
   wallType "old office building"
 }
-CommercialBuilding {
-  translation 26 -58 0
-  name "commercial_se"
-}
+# Mid-South-West block (Central Obstacle)
 SimpleBuilding {
-  translation 36 -48 0
-  name "office_se"
-  floorNumber 7
+  translation -25 -20 0
+  name "office_mid_sw"
+  floorHeight 3.0
+  floorNumber 6
   corners [
-    8 10
-    8 -10
-    -8 -10
-    -8 10
-  ]
-  wallType "concrete building"
-}
-ResidentialBuilding {
-  translation -26 -58 0
-  name "residential_sw"
-}
-SimpleBuilding {
-  translation -36 -48 0
-  name "office_sw"
-  floorNumber 5
-  corners [
-    9 9
-    9 -9
-    -9 -9
-    -9 9
-  ]
-  wallType "brick building"
-}
-Hotel {
-  translation 60 0 0
-  name "hotel_east"
-}
-SimpleBuilding {
-  translation -60 10 0
-  name "building_w1"
-  floorNumber 4
-  corners [
-    12 8
-    12 -8
-    -12 -8
-    -12 8
+    6 6
+    6 -6
+    -6 -6
+    -6 6
   ]
   wallType "residential building"
 }
+# Mid-South-East block (Central Obstacle)
 SimpleBuilding {
-  translation -62 -10 0
-  name "building_w2"
+  translation 25 -20 0
+  name "office_mid_se"
+  floorHeight 3.0
+  floorNumber 7
   corners [
-    10 6
-    10 -6
-    -10 -6
-    -10 6
+    6 6
+    6 -6
+    -6 -6
+    -6 6
   ]
-  wallType "old building"
+  wallType "concrete building"
 }
-RandomBuilding {
-  translation 0 72 0
-  name "random_n1"
-}
-LargeResidentialTower {
-  translation -20 72 0
-  name "tower_res_n"
-}
+# South-West block
 SimpleBuilding {
-  translation 22 72 0
-  name "building_n2"
-  floorNumber 9
+  translation -25 -55 0
+  name "building_sw"
+  floorHeight 3.0
+  floorNumber 5
   corners [
-    8 10
-    8 -10
-    -8 -10
-    -8 10
+    6 6
+    6 -6
+    -6 -6
+    -6 6
   ]
-  wallType "highrise"
+  wallType "brick building"
+}
+# South-East block
+SimpleBuilding {
+  translation 25 -55 0
+  name "building_se"
+  floorHeight 3.0
+  floorNumber 6
+  corners [
+    6 6
+    6 -6
+    -6 -6
+    -6 6
+  ]
+  wallType "classic building"
 }
 # ── Street lights ──────────────────────────────────────────────────────────────
 StreetLight {
@@ -637,10 +608,10 @@ Pedestrian {
   ]
   shirtColor 0.6 0.6 0.1
 }
-# ── UAV_0 ONLY — placed at mission start (-40, 48, 15) ─────────────────────────
+# ── UAV_0 ONLY — placed at mission start (-40, -40, 15) ─────────────────────────
 # UAV_1, UAV_2, UAV_3, UAV_4 intentionally removed for single-drone dev mode.
 DEF UAV_0 Mavic2Pro {
-  translation -40 48 15
+  translation -40 -40 15
   rotation 0 0 1 0
   name "UAV_0"
   controller "uav_camera"

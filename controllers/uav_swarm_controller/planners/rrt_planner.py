@@ -28,6 +28,10 @@ class RRTPlanner(PlannerBase):
         print(f"[RRT] Planner initialized | max_iter: {self.max_iterations} | "
               f"step_size: {self.step_size}m | bidirectional: {self.bidirectional} | inflation: {self.inflation}m")
 
+    def get_snapped_start(self, start):
+        """Find the nearest collision-free point in continuous space."""
+        return self._nearest_free_point(start)
+
     # -- Segment collision checking -------------------------------------------
 
     def _is_collision_free(self, p1, p2) -> bool:
